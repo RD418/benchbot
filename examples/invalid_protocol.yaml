@@ -1,0 +1,26 @@
+# Intentionally broken: every step here trips a different validation rule.
+# Run `benchbot validate examples/invalid_protocol.yaml` (M5) or the loader+validate
+# API to see the structured diagnostics.
+version: 1
+metadata:
+  name: Broken on purpose
+labware:
+  - id: plate1
+    type: plate_96_wellplate_200ul
+    slot: 1
+  - id: plate1                       # E_DUP_LABWARE_ID (duplicate id)
+    type: plate_96_wellplate_200ul
+    slot: 4
+  - id: collide
+    type: plate_96_wellplate_200ul
+    slot: 1                          # E_SLOT_OCCUPIED (slot 1 taken by plate1)
+  - id: mystery
+    type: plate_9000_wellplate       # E_UNKNOWN_LABWARE_TYPE
+    slot: 2
+liquids:
+  - { well: "plate1:A1", volume_ul: 500 }   # E_VOLUME_EXCEEDS_CAPACITY (cap 200)
+steps:
+  - transfer: { source: "plate1:Z9", dest: "plate1:A2", volume_ul: 50 }   # E_INVALID_WELL
+  - transfer: { source: "plate1:A1", dest: "plate1:A1", volume_ul: 50 }   # E_SAME_SOURCE_DEST
+  - transfer: { source: "ghost:A1",  dest: "plate1:A2", volume_ul: 50 }   # E_UNKNOWN_LABWARE_REF
+  - mix:      { well: "plate1:A2", volume_ul: -5 }                        # E_VOLUME_NOT_POSITIVE

@@ -1,0 +1,25 @@
+version: 1
+metadata:
+  name: Serial dilution
+  author: BenchBot
+  description: Two-fold serial dilution across the first row of a 96-well plate.
+labware:
+  - id: plate1
+    type: plate_96_wellplate_200ul
+    slot: 1
+  - id: tips1
+    type: tiprack_300ul
+    slot: 2
+  - id: trough
+    type: reservoir_12col_15ml
+    slot: 3
+liquids:
+  - { well: "plate1:A1", volume_ul: 200 }
+  - { well: "trough:A1", volume_ul: 10000 }
+steps:
+  - transfer: { source: "trough:A1", dest: "plate1:A2", volume_ul: 100, new_tip: true }
+  - transfer: { source: "trough:A1", dest: "plate1:A3", volume_ul: 100, new_tip: true }
+  - transfer: { source: "plate1:A1", dest: "plate1:A2", volume_ul: 100, new_tip: true }
+  - mix:      { well: "plate1:A2", volume_ul: 50, repeats: 3 }
+  - transfer: { source: "plate1:A2", dest: "plate1:A3", volume_ul: 100, new_tip: true }
+  - mix:      { well: "plate1:A3", volume_ul: 50, repeats: 3 }
