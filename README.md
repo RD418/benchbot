@@ -8,9 +8,9 @@ such as [PyLabRobot](https://github.com/PyLabRobot/pylabrobot) and
 [PyHamilton](https://github.com/dgretton/pyhamilton), but is a self-contained
 simulator with **no hardware required**.
 
-> **Status:** Milestone 1 (domain core + validation) is implemented. The engine,
-> mock instruments, persistence, API, and CLI land in later milestones — see the
-> roadmap below.
+> **Status:** Milestones 1–2 (domain core + validation, simulation engine) are
+> implemented. Mock instruments, persistence, API, and CLI land in later
+> milestones — see the roadmap below.
 
 ## Why it's interesting
 
@@ -76,6 +76,25 @@ protocol = (
 assert validate(protocol).ok
 ```
 
+Run a protocol through the simulator:
+
+```python
+from benchbot.domain import load_protocol_file
+from benchbot.engine import SimulationRunner
+
+result = SimulationRunner().run(load_protocol_file("examples/serial_dilution.yaml"))
+print(result.status.value)        # "completed" | "failed" | "invalid"
+for event in result.events:
+    print(event.seq, event.type)
+print(result.final_state)         # {"plate1:A1": 100.0, ...}
+```
+
+A run has three terminal statuses: `invalid` (rejected by static validation, never
+executed), `failed` (a dynamic error stopped it mid-run — see `result.failure`),
+and `completed`. Every run produces an ordered **event stream**
+(`run_started`, `step_started`, `step_completed`, `step_warning`, `step_failed`,
+`run_failed`, `run_completed`) and a final deck snapshot.
+
 ## Protocol format
 
 A protocol is a YAML/JSON document with four sections:
@@ -130,6 +149,20 @@ Validation never raises bare strings — every finding is an `Issue` with a stab
 
 See `examples/invalid_protocol.yaml` for a document that trips most of these.
 
+### Dynamic codes (raised by the engine during a run)
+
+These depend on live deck state and can only be caught while executing:
+
+| Code | Severity | Meaning |
+| --- | --- | --- |
+| `E_INSUFFICIENT_VOLUME` | error | Aspirated more than the well currently holds. |
+| `E_OVERFILL` | error | A dispense pushed a well past its capacity. |
+| `E_TIP_OVERFLOW` | error | Aspirated more than the mounted tip can hold. |
+| `E_INSUFFICIENT_TIP_VOLUME` | error | Dispensed more than the tip is carrying. |
+| `E_NO_TIP_AVAILABLE` | error | All tips on the deck have been used. |
+| `E_NO_TIP_MOUNTED` | error | Aspirate/dispense attempted without a tip. |
+| `W_TIP_CARRYOVER` | warning | A reused tip crossed wells; possible carryover. |
+
 ## Simulated work-cell assumptions
 
 - A single deck with 12 slots; one labware instance per slot.
@@ -139,8 +172,8 @@ See `examples/invalid_protocol.yaml` for a document that trips most of these.
 
 ## Roadmap
 
-1. **M1 — Domain core + validation** ✅ (this milestone)
-2. **M2 — Simulation engine + virtual deck state** (event emission)
+1. **M1 — Domain core + validation** ✅
+2. **M2 — Simulation engine + virtual deck state + event emission** ✅
 3. **M3 — Mock serial instruments + seeded faults + retry/recovery**
 4. **M4 — SQLite persistence (event-sourced run log via SQLAlchemy/Alembic)**
 5. **M5 — FastAPI service + Typer CLI**
@@ -155,6 +188,10 @@ src/benchbot/domain/    # pure models + validation (no I/O)
   protocol.py           # protocol model + fluent builder
   loader.py             # YAML/JSON parsing
   validation.py         # static validation
+src/benchbot/engine/    # stateful simulation (depends only on domain)
+  deck.py               # virtual deck: well volumes, tips, pipette
+  events.py             # run event types + in-memory event log
+  runner.py             # synchronous step executor + dynamic validation
 examples/               # sample protocols (one valid, one broken)
 tests/                  # pytest suite
 ```
