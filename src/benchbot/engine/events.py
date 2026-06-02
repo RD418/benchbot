@@ -40,6 +40,37 @@ class StepStarted(_BaseEvent):
     detail: str
 
 
+class CommandSent(_BaseEvent):
+    type: Literal["command_sent"] = "command_sent"
+    step_index: int
+    command: str
+    attempt: int
+
+
+class CommandAcked(_BaseEvent):
+    type: Literal["command_acked"] = "command_acked"
+    step_index: int
+    command: str
+    attempt: int
+
+
+class RetryScheduled(_BaseEvent):
+    type: Literal["retry_scheduled"] = "retry_scheduled"
+    step_index: int
+    command: str
+    attempt: int
+    code: str
+    message: str
+
+
+class RecoveryFailed(_BaseEvent):
+    type: Literal["recovery_failed"] = "recovery_failed"
+    step_index: int
+    command: str
+    code: str
+    message: str
+
+
 class StepCompleted(_BaseEvent):
     type: Literal["step_completed"] = "step_completed"
     step_index: int
@@ -74,6 +105,10 @@ class RunFailed(_BaseEvent):
 Event = Annotated[
     RunStarted
     | StepStarted
+    | CommandSent
+    | CommandAcked
+    | RetryScheduled
+    | RecoveryFailed
     | StepCompleted
     | StepWarning
     | StepFailed

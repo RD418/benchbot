@@ -1,12 +1,14 @@
 """The synchronous simulation runner.
 
-Executes a protocol step-by-step against a :class:`DeckState`, emitting events
-as it goes and stopping on the first dynamic failure. Static validation runs
-first by default, so a run that starts is guaranteed structurally sound; what
-the runner adds is *stateful* checking (volumes, tips, carryover).
+Executes a protocol step-by-step against a :class:`DeckState`, routing every
+physical action (pick up tip, aspirate, dispense, drop tip) through an
+:class:`~benchbot.instruments.base.Instrument` wrapped in a
+:class:`~benchbot.engine.retry.RetryPolicy`. Static validation runs first;
+stateful checks (volumes, tips) run pre-flight before each command; instrument
+faults drive the retry/recovery path. Everything is recorded as events.
 
-The runner is intentionally synchronous in M2. Async orchestration (queuing,
-cancellation, retries) arrives with the instrument layer and API.
+The runner is intentionally synchronous in M2/M3. Async orchestration (queuing,
+cancellation) arrives with the API.
 """
 
 from __future__ import annotations
@@ -27,8 +29,12 @@ from benchbot.domain.protocol import (
 from benchbot.domain.validation import validate
 from benchbot.engine.deck import EPSILON, DeckState, SimulationError
 from benchbot.engine.events import (
+    CommandAcked,
+    CommandSent,
     Event,
     EventLog,
+    RecoveryFailed,
+    RetryScheduled,
     RunCompleted,
     RunFailed,
     RunStarted,
@@ -37,6 +43,15 @@ from benchbot.engine.events import (
     StepStarted,
     StepWarning,
 )
+from benchbot.engine.retry import RetryPolicy
+from benchbot.instruments.base import (
+    Ack,
+    Command,
+    Instrument,
+    InstrumentError,
+    RetryableError,
+)
+from benchbot.instruments.mock_serial import MockSerialInstrument
 
 
 class RunStatus(StrEnum):
@@ -60,7 +75,15 @@ class RunResult(BaseModel):
 
 
 class SimulationRunner:
-    """Runs protocols against an in-memory virtual deck."""
+    """Runs protocols against an in-memory virtual deck via an instrument."""
+
+    def __init__(
+        self,
+        instrument: Instrument | None = None,
+        retry: RetryPolicy | None = None,
+    ) -> None:
+        self.instrument: Instrument = instrument or MockSerialInstrument()
+        self.retry = retry or RetryPolicy()
 
     def run(self, protocol: Protocol, *, run_validation: bool = True) -> RunResult:
         if run_validation:
@@ -110,29 +133,38 @@ class SimulationRunner:
 
     def _execute(self, step: Step, index: int, deck: DeckState, log: EventLog) -> None:
         if isinstance(step, TransferStep):
-            self._acquire_tip(deck, new_tip=step.new_tip)
+            self._acquire_tip(deck, log, index, new_tip=step.new_tip)
             self._aspirate(deck, step.source, step.volume_ul, index, log)
-            self._dispense(deck, step.dest, step.volume_ul)
+            self._dispense(deck, step.dest, step.volume_ul, index, log)
         elif isinstance(step, AspirateStep):
-            self._acquire_tip(deck, new_tip=False)
+            self._acquire_tip(deck, log, index, new_tip=False)
             self._aspirate(deck, step.well, step.volume_ul, index, log)
         elif isinstance(step, DispenseStep):
-            self._dispense(deck, step.well, step.volume_ul)
+            self._dispense(deck, step.well, step.volume_ul, index, log)
         elif isinstance(step, MixStep):
-            self._acquire_tip(deck, new_tip=False)
+            self._acquire_tip(deck, log, index, new_tip=False)
             for _ in range(step.repeats):
                 self._aspirate(deck, step.well, step.volume_ul, index, log)
-                self._dispense(deck, step.well, step.volume_ul)
+                self._dispense(deck, step.well, step.volume_ul, index, log)
 
-    def _acquire_tip(self, deck: DeckState, *, new_tip: bool) -> None:
+    def _acquire_tip(
+        self, deck: DeckState, log: EventLog, index: int, *, new_tip: bool
+    ) -> None:
         pipette = deck.pipette
-        if new_tip or not pipette.has_tip:
-            tip_id, capacity = deck.take_tip()
-            pipette.has_tip = True
-            pipette.tip_id = tip_id
-            pipette.tip_capacity_ul = capacity
-            pipette.tip_volume_ul = 0.0
-            pipette.fresh = True
+        if not new_tip and pipette.has_tip:
+            return
+        if pipette.has_tip:
+            self._send(index, Command(name="DROP_TIP", params={"tip": pipette.tip_id or ""}), log)
+            pipette.has_tip = False
+        if deck.tips_remaining == 0:
+            raise SimulationError("E_NO_TIP_AVAILABLE", "No tips remaining on the deck.")
+        tip_id, capacity = deck.take_tip()
+        self._send(index, Command(name="PICK_UP_TIP", params={"tip": tip_id}), log)
+        pipette.has_tip = True
+        pipette.tip_id = tip_id
+        pipette.tip_capacity_ul = capacity
+        pipette.tip_volume_ul = 0.0
+        pipette.fresh = True
 
     def _aspirate(
         self, deck: DeckState, ref: str, volume_ul: float, index: int, log: EventLog
@@ -140,6 +172,18 @@ class SimulationRunner:
         pipette = deck.pipette
         if not pipette.has_tip:
             raise SimulationError("E_NO_TIP_MOUNTED", "Aspirate attempted with no tip mounted.")
+        # Pre-flight state checks happen before any command reaches the instrument.
+        if pipette.tip_volume_ul + volume_ul > pipette.tip_capacity_ul + EPSILON:
+            raise SimulationError(
+                "E_TIP_OVERFLOW",
+                f"Aspirating {volume_ul}uL exceeds tip capacity "
+                f"{pipette.tip_capacity_ul}uL (holds {pipette.tip_volume_ul}uL).",
+            )
+        if volume_ul > deck.volume(ref) + EPSILON:
+            raise SimulationError(
+                "E_INSUFFICIENT_VOLUME",
+                f"Cannot aspirate {volume_ul}uL from '{ref}' holding {deck.volume(ref)}uL.",
+            )
         if (
             not pipette.fresh
             and pipette.last_source is not None
@@ -155,18 +199,15 @@ class SimulationRunner:
                     ),
                 )
             )
-        if pipette.tip_volume_ul + volume_ul > pipette.tip_capacity_ul + EPSILON:
-            raise SimulationError(
-                "E_TIP_OVERFLOW",
-                f"Aspirating {volume_ul}uL exceeds tip capacity "
-                f"{pipette.tip_capacity_ul}uL (holds {pipette.tip_volume_ul}uL).",
-            )
+        self._send(index, Command(name="ASPIRATE", params={"vol": volume_ul, "well": ref}), log)
         deck.remove_liquid(ref, volume_ul)
         pipette.tip_volume_ul += volume_ul
         pipette.last_source = ref
         pipette.fresh = False
 
-    def _dispense(self, deck: DeckState, ref: str, volume_ul: float) -> None:
+    def _dispense(
+        self, deck: DeckState, ref: str, volume_ul: float, index: int, log: EventLog
+    ) -> None:
         pipette = deck.pipette
         if not pipette.has_tip:
             raise SimulationError("E_NO_TIP_MOUNTED", "Dispense attempted with no tip mounted.")
@@ -175,8 +216,56 @@ class SimulationRunner:
                 "E_INSUFFICIENT_TIP_VOLUME",
                 f"Dispensing {volume_ul}uL but tip holds only {pipette.tip_volume_ul}uL.",
             )
+        if deck.volume(ref) + volume_ul > deck.capacity(ref) + EPSILON:
+            raise SimulationError(
+                "E_OVERFILL",
+                f"Dispensing {volume_ul}uL into '{ref}' "
+                f"(holds {deck.volume(ref)}uL) exceeds capacity {deck.capacity(ref)}uL.",
+            )
+        self._send(index, Command(name="DISPENSE", params={"vol": volume_ul, "well": ref}), log)
         deck.add_liquid(ref, volume_ul)
         pipette.tip_volume_ul -= volume_ul
+
+    # --- Instrument I/O with retry/recovery -----------------------------------
+
+    def _send(self, step_index: int, command: Command, log: EventLog) -> Ack:
+        attempt_no = 0
+
+        def attempt() -> Ack:
+            nonlocal attempt_no
+            attempt_no += 1
+            log.emit(
+                CommandSent(step_index=step_index, command=command.frame(), attempt=attempt_no)
+            )
+            ack = self.instrument.send(command)
+            log.emit(
+                CommandAcked(step_index=step_index, command=command.frame(), attempt=attempt_no)
+            )
+            return ack
+
+        def on_retry(attempt_number: int, error: RetryableError) -> None:
+            log.emit(
+                RetryScheduled(
+                    step_index=step_index,
+                    command=command.frame(),
+                    attempt=attempt_number,
+                    code=error.code,
+                    message=str(error),
+                )
+            )
+
+        try:
+            return self.retry.run(attempt, on_retry)
+        except InstrumentError as exc:
+            log.emit(
+                RecoveryFailed(
+                    step_index=step_index,
+                    command=command.frame(),
+                    code=exc.code,
+                    message=str(exc),
+                )
+            )
+            raise SimulationError(exc.code, str(exc)) from exc
 
 
 def _describe(step: Step) -> tuple[str, str]:

@@ -8,9 +8,9 @@ such as [PyLabRobot](https://github.com/PyLabRobot/pylabrobot) and
 [PyHamilton](https://github.com/dgretton/pyhamilton), but is a self-contained
 simulator with **no hardware required**.
 
-> **Status:** Milestones 1–2 (domain core + validation, simulation engine) are
-> implemented. Mock instruments, persistence, API, and CLI land in later
-> milestones — see the roadmap below.
+> **Status:** Milestones 1–3 (domain core + validation, simulation engine, mock
+> instruments + seeded faults + retry/recovery) are implemented. Persistence,
+> API, and CLI land in later milestones — see the roadmap below.
 
 ## Why it's interesting
 
@@ -95,6 +95,29 @@ and `completed`. Every run produces an ordered **event stream**
 (`run_started`, `step_started`, `step_completed`, `step_warning`, `step_failed`,
 `run_failed`, `run_completed`) and a final deck snapshot.
 
+### Injecting faults (deterministic)
+
+Physical actions are routed through a mock serial instrument. Inject reproducible
+faults to exercise retry and recovery:
+
+```python
+from benchbot.engine import SimulationRunner, RetryPolicy
+from benchbot.instruments import MockSerialInstrument, RandomFaults
+
+instrument = MockSerialInstrument(RandomFaults(seed=7, transient_rate=0.2, hard_rate=0.02))
+runner = SimulationRunner(instrument, RetryPolicy(max_attempts=3))
+result = runner.run(protocol)   # same seed -> byte-for-byte same run
+```
+
+The instrument frames each command (`>ASPIRATE vol=100 well=p:A1`), returns
+ACK/NAK, and raises transient (NAK), timeout, or fatal hardware faults per its
+`FaultPolicy`. Transient/timeout faults are retried with exponential backoff
+(`RetryScheduled` events); a hardware fault or exhausted retries emits
+`RecoveryFailed` and aborts the run. Because faults come from a seeded RNG, a
+given `(seed, protocol)` always produces the identical event stream — failures
+are reproducible and unit-testable. Use `ScriptedFaults([...])` for exact
+control in tests, or `NoFaults()` (the default) for perfect hardware.
+
 ## Protocol format
 
 A protocol is a YAML/JSON document with four sections:
@@ -162,6 +185,9 @@ These depend on live deck state and can only be caught while executing:
 | `E_NO_TIP_AVAILABLE` | error | All tips on the deck have been used. |
 | `E_NO_TIP_MOUNTED` | error | Aspirate/dispense attempted without a tip. |
 | `W_TIP_CARRYOVER` | warning | A reused tip crossed wells; possible carryover. |
+| `E_INSTRUMENT_NAK` | error | Instrument NAK'd after retries were exhausted. |
+| `E_INSTRUMENT_TIMEOUT` | error | Instrument timed out after retries were exhausted. |
+| `E_HARDWARE_FAILURE` | error | Fatal hardware fault (never retried). |
 
 ## Simulated work-cell assumptions
 
@@ -174,7 +200,7 @@ These depend on live deck state and can only be caught while executing:
 
 1. **M1 — Domain core + validation** ✅
 2. **M2 — Simulation engine + virtual deck state + event emission** ✅
-3. **M3 — Mock serial instruments + seeded faults + retry/recovery**
+3. **M3 — Mock serial instruments + seeded faults + retry/recovery** ✅
 4. **M4 — SQLite persistence (event-sourced run log via SQLAlchemy/Alembic)**
 5. **M5 — FastAPI service + Typer CLI**
 6. **M6 — Docker, CI, expanded docs**
@@ -191,7 +217,12 @@ src/benchbot/domain/    # pure models + validation (no I/O)
 src/benchbot/engine/    # stateful simulation (depends only on domain)
   deck.py               # virtual deck: well volumes, tips, pipette
   events.py             # run event types + in-memory event log
-  runner.py             # synchronous step executor + dynamic validation
+  runner.py             # step executor + dynamic validation + instrument I/O
+  retry.py              # retry policy with exponential backoff
+src/benchbot/instruments/  # the hardware seam (depends on domain)
+  base.py               # Instrument interface, Command/Ack frames, error types
+  faults.py             # deterministic fault policies (seeded / scripted)
+  mock_serial.py        # simulated serial instrument
 examples/               # sample protocols (one valid, one broken)
 tests/                  # pytest suite
 ```
