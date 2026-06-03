@@ -8,9 +8,10 @@ such as [PyLabRobot](https://github.com/PyLabRobot/pylabrobot) and
 [PyHamilton](https://github.com/dgretton/pyhamilton), but is a self-contained
 simulator with **no hardware required**.
 
-> **Status:** Milestones 1–3 (domain core + validation, simulation engine, mock
-> instruments + seeded faults + retry/recovery) are implemented. Persistence,
-> API, and CLI land in later milestones — see the roadmap below.
+> **Status:** Milestones 1–4 (domain core + validation, simulation engine, mock
+> instruments + seeded faults + retry/recovery, event-sourced SQLite
+> persistence) are implemented. The API and CLI land in later milestones — see
+> the roadmap below.
 
 ## Why it's interesting
 
@@ -34,7 +35,7 @@ simulator with **no hardware required**.
 | Lint + format | Ruff |
 | Type checking | mypy (strict) |
 | Tests | pytest + coverage |
-| Persistence *(later)* | SQLAlchemy 2.0 async + Alembic + aiosqlite |
+| Persistence | SQLAlchemy 2.0 async + Alembic + aiosqlite |
 | API *(later)* | FastAPI |
 | CLI *(later)* | Typer |
 
@@ -117,6 +118,41 @@ ACK/NAK, and raises transient (NAK), timeout, or fatal hardware faults per its
 given `(seed, protocol)` always produces the identical event stream — failures
 are reproducible and unit-testable. Use `ScriptedFaults([...])` for exact
 control in tests, or `NoFaults()` (the default) for perfect hardware.
+
+### Persisting runs (event-sourced)
+
+Runs are stored in SQLite as an **append-only event stream**; a run's status is
+derived from its events, not stored as independent mutable state. The schema is
+managed by Alembic migrations.
+
+```bash
+export BENCHBOT_DATABASE_URL="sqlite+aiosqlite:///benchbot.db"
+uv run alembic upgrade head     # create/upgrade the schema
+```
+
+```python
+import asyncio
+from benchbot.domain import load_protocol_file
+from benchbot.engine import SimulationRunner
+from benchbot.store import make_engine, make_session_factory, RunStore
+
+async def main() -> None:
+    store = RunStore(make_session_factory(make_engine()))
+    protocol = load_protocol_file("examples/serial_dilution.yaml")
+    result = SimulationRunner().run(protocol)
+    run_id = await store.save_result(
+        result, protocol_name=protocol.metadata.name, total_steps=len(protocol.steps)
+    )
+    print(await store.get_run(run_id))            # cached status projection
+    print(await store.reconstruct_status(run_id)) # re-derived from the events
+
+asyncio.run(main())
+```
+
+Persistence uses **SQLAlchemy 2.0 (async)** with `aiosqlite`. The `runs.status`
+column is a read-model projection of `project_status(events)`; tests assert the
+two always agree. Because the only coupling to SQLite is `BENCHBOT_DATABASE_URL`,
+moving to Postgres is a one-line change.
 
 ## Protocol format
 
@@ -201,7 +237,7 @@ These depend on live deck state and can only be caught while executing:
 1. **M1 — Domain core + validation** ✅
 2. **M2 — Simulation engine + virtual deck state + event emission** ✅
 3. **M3 — Mock serial instruments + seeded faults + retry/recovery** ✅
-4. **M4 — SQLite persistence (event-sourced run log via SQLAlchemy/Alembic)**
+4. **M4 — SQLite persistence (event-sourced run log via SQLAlchemy/Alembic)** ✅
 5. **M5 — FastAPI service + Typer CLI**
 6. **M6 — Docker, CI, expanded docs**
 
@@ -223,6 +259,12 @@ src/benchbot/instruments/  # the hardware seam (depends on domain)
   base.py               # Instrument interface, Command/Ack frames, error types
   faults.py             # deterministic fault policies (seeded / scripted)
   mock_serial.py        # simulated serial instrument
+src/benchbot/store/     # persistence (depends on engine + domain)
+  models.py             # SQLAlchemy ORM: runs + append-only events tables
+  db.py                 # async engine / session / URL config
+  repository.py         # RunStore: save runs, load events, reconstruct status
+  projections.py        # derive run status from the event stream
+migrations/             # Alembic migrations (async env, initial schema)
 examples/               # sample protocols (one valid, one broken)
 tests/                  # pytest suite
 ```

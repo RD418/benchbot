@@ -9,11 +9,14 @@ authors = [{ name = "BenchBot" }]
 dependencies = [
     "pydantic>=2.6",
     "pyyaml>=6.0",
+    "sqlalchemy[asyncio]>=2.0",
+    "aiosqlite>=0.20",
+    "alembic>=1.13",
 ]
 
 [project.optional-dependencies]
 # Added in later milestones (kept here so the roadmap is visible):
-# api  -> fastapi, uvicorn, sqlalchemy, alembic, aiosqlite
+# api  -> fastapi, uvicorn
 # cli  -> typer
 
 [dependency-groups]
