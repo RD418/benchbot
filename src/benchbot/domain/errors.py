@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 
 class Severity(StrEnum):
@@ -50,14 +50,17 @@ class ValidationResult(BaseModel):
 
     issues: list[Issue] = []
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def errors(self) -> list[Issue]:
         return [i for i in self.issues if i.severity is Severity.ERROR]
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def warnings(self) -> list[Issue]:
         return [i for i in self.issues if i.severity is Severity.WARNING]
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def ok(self) -> bool:
         """True when there are no blocking errors (warnings are allowed)."""

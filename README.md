@@ -8,10 +8,10 @@ such as [PyLabRobot](https://github.com/PyLabRobot/pylabrobot) and
 [PyHamilton](https://github.com/dgretton/pyhamilton), but is a self-contained
 simulator with **no hardware required**.
 
-> **Status:** Milestones 1–4 (domain core + validation, simulation engine, mock
-> instruments + seeded faults + retry/recovery, event-sourced SQLite
-> persistence) are implemented. The API and CLI land in later milestones — see
-> the roadmap below.
+> **Status:** Milestones 1–5 are implemented — domain core + validation,
+> simulation engine, mock instruments + seeded faults + retry/recovery,
+> event-sourced SQLite persistence, and a FastAPI service + Typer CLI. Docker
+> and CI polish remain (M6) — see the roadmap below.
 
 ## Why it's interesting
 
@@ -36,8 +36,8 @@ simulator with **no hardware required**.
 | Type checking | mypy (strict) |
 | Tests | pytest + coverage |
 | Persistence | SQLAlchemy 2.0 async + Alembic + aiosqlite |
-| API *(later)* | FastAPI |
-| CLI *(later)* | Typer |
+| API | FastAPI + uvicorn |
+| CLI | Typer |
 
 ## Quickstart
 
@@ -154,6 +154,55 @@ column is a read-model projection of `project_status(events)`; tests assert the
 two always agree. Because the only coupling to SQLite is `BENCHBOT_DATABASE_URL`,
 moving to Postgres is a one-line change.
 
+## Command-line interface
+
+The `benchbot` CLI wraps the same engine and store:
+
+```bash
+uv run benchbot validate examples/serial_dilution.yaml      # static check
+uv run benchbot run examples/serial_dilution.yaml           # simulate + print events
+uv run benchbot run examples/serial_dilution.yaml \
+    --seed 7 --transient-rate 0.3 --max-attempts 5 --save   # faults + persist
+uv run benchbot list                                        # persisted runs
+uv run benchbot show <run_id>                               # run summary
+uv run benchbot events <run_id>                             # stored event stream
+uv run benchbot serve --port 8000                           # launch the HTTP API
+```
+
+`validate` and `run` exit non-zero on invalid/failed runs, so they compose in
+scripts and CI.
+
+## HTTP API
+
+```bash
+uv run benchbot serve            # or: uv run uvicorn benchbot.api.app:create_app --factory
+```
+
+Interactive docs are served at `/docs`. Endpoints:
+
+| Method & path | Purpose |
+| --- | --- |
+| `GET /health` | Liveness check. |
+| `POST /protocols/validate` | Static-validate a protocol; returns issues. |
+| `POST /runs` | Submit + simulate a protocol; returns a run summary. |
+| `GET /runs` | List persisted runs (most recent first). |
+| `GET /runs/{id}` | Run status + metadata. |
+| `GET /runs/{id}/events` | The full event stream. |
+| `GET /runs/{id}/diagnostics` | Command/retry/recovery counts + failure + warnings. |
+
+A `POST /runs` body can tune deterministic faults and retries:
+
+```jsonc
+{
+  "protocol": { "version": 1, "labware": [...], "liquids": [...], "steps": [...] },
+  "faults":   { "seed": 7, "transient_rate": 0.3, "hard_rate": 0.02 },
+  "retry":    { "max_attempts": 5 }
+}
+```
+
+The diagnostics response makes retry/recovery observable, e.g.
+`{"command_count": 5, "retry_count": 2, "recovery_failures": 0, ...}`.
+
 ## Protocol format
 
 A protocol is a YAML/JSON document with four sections:
@@ -238,7 +287,7 @@ These depend on live deck state and can only be caught while executing:
 2. **M2 — Simulation engine + virtual deck state + event emission** ✅
 3. **M3 — Mock serial instruments + seeded faults + retry/recovery** ✅
 4. **M4 — SQLite persistence (event-sourced run log via SQLAlchemy/Alembic)** ✅
-5. **M5 — FastAPI service + Typer CLI**
+5. **M5 — FastAPI service + Typer CLI** ✅
 6. **M6 — Docker, CI, expanded docs**
 
 ## Project layout
@@ -264,6 +313,11 @@ src/benchbot/store/     # persistence (depends on engine + domain)
   db.py                 # async engine / session / URL config
   repository.py         # RunStore: save runs, load events, reconstruct status
   projections.py        # derive run status from the event stream
+src/benchbot/api/       # FastAPI service (thin adapter over engine + store)
+  app.py                # application factory + lifespan-managed store
+  routes.py             # endpoints
+  schemas.py            # request/response models
+src/benchbot/cli.py     # Typer CLI (validate / run / list / show / events / serve)
 migrations/             # Alembic migrations (async env, initial schema)
 examples/               # sample protocols (one valid, one broken)
 tests/                  # pytest suite
