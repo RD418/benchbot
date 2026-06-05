@@ -59,9 +59,7 @@ class LabwareDefinition(BaseModel):
 
     def well_addresses(self) -> list[str]:
         return [
-            f"{letter}{col}"
-            for letter in self.row_letters()
-            for col in range(1, self.columns + 1)
+            f"{letter}{col}" for letter in self.row_letters() for col in range(1, self.columns + 1)
         ]
 
 

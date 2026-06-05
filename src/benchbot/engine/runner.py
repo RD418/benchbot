@@ -97,9 +97,7 @@ class SimulationRunner:
 
         deck = DeckState.from_protocol(protocol)
         log = EventLog()
-        log.emit(
-            RunStarted(protocol_name=protocol.metadata.name, total_steps=len(protocol.steps))
-        )
+        log.emit(RunStarted(protocol_name=protocol.metadata.name, total_steps=len(protocol.steps)))
 
         for index, step in enumerate(protocol.steps):
             action, detail = _describe(step)
@@ -147,9 +145,7 @@ class SimulationRunner:
                 self._aspirate(deck, step.well, step.volume_ul, index, log)
                 self._dispense(deck, step.well, step.volume_ul, index, log)
 
-    def _acquire_tip(
-        self, deck: DeckState, log: EventLog, index: int, *, new_tip: bool
-    ) -> None:
+    def _acquire_tip(self, deck: DeckState, log: EventLog, index: int, *, new_tip: bool) -> None:
         pipette = deck.pipette
         if not new_tip and pipette.has_tip:
             return
@@ -184,11 +180,7 @@ class SimulationRunner:
                 "E_INSUFFICIENT_VOLUME",
                 f"Cannot aspirate {volume_ul}uL from '{ref}' holding {deck.volume(ref)}uL.",
             )
-        if (
-            not pipette.fresh
-            and pipette.last_source is not None
-            and pipette.last_source != ref
-        ):
+        if not pipette.fresh and pipette.last_source is not None and pipette.last_source != ref:
             log.emit(
                 StepWarning(
                     step_index=index,

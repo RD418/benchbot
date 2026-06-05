@@ -61,9 +61,7 @@ def test_tiprack_not_required_when_reusing_tip() -> None:
 
 def test_slot_out_of_range() -> None:
     protocol = (
-        ProtocolBuilder("bad slot")
-        .add_plate("p", "plate_96_wellplate_200ul", slot=99)
-        .build()
+        ProtocolBuilder("bad slot").add_plate("p", "plate_96_wellplate_200ul", slot=99).build()
     )
     assert "E_SLOT_OUT_OF_RANGE" in _codes(protocol)
 

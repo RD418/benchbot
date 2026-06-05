@@ -56,11 +56,7 @@ def test_tip_inventory_depletes() -> None:
 
 
 def test_running_out_of_tips_raises() -> None:
-    protocol = (
-        ProtocolBuilder("tiny")
-        .add_tiprack("t", "tiprack_300ul", slot=1)
-        .build()
-    )
+    protocol = ProtocolBuilder("tiny").add_tiprack("t", "tiprack_300ul", slot=1).build()
     deck = DeckState.from_protocol(protocol)
     for _ in range(96):
         deck.take_tip()

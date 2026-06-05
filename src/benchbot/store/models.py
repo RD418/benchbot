@@ -44,9 +44,7 @@ class EventRow(Base):
     __table_args__ = (UniqueConstraint("run_id", "seq", name="uq_event_run_seq"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    run_id: Mapped[str] = mapped_column(
-        ForeignKey("runs.id", ondelete="CASCADE"), index=True
-    )
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
     seq: Mapped[int] = mapped_column(Integer)
     type: Mapped[str] = mapped_column(String(40), index=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))

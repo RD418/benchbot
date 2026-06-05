@@ -57,9 +57,7 @@ async def validate_protocol(protocol: Protocol) -> ValidationResult:
 
 
 @router.post("/runs", response_model=RunSummary, status_code=201)
-async def submit_run(
-    request: RunRequest, store: StoreDep
-) -> RunSummary:
+async def submit_run(request: RunRequest, store: StoreDep) -> RunSummary:
     try:
         runner = _build_runner(request)
     except ValueError as exc:  # invalid fault rates
@@ -100,9 +98,7 @@ async def get_events(run_id: str, store: StoreDep) -> list[Event]:
 
 
 @router.get("/runs/{run_id}/diagnostics", response_model=Diagnostics)
-async def get_diagnostics(
-    run_id: str, store: StoreDep
-) -> Diagnostics:
+async def get_diagnostics(run_id: str, store: StoreDep) -> Diagnostics:
     run = await _require_run(store, run_id)
     events = await store.get_events(run_id)
     failure = (

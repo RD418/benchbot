@@ -39,9 +39,7 @@ def test_run_with_hard_fault_fails() -> None:
     assert "failed" in result.output
 
 
-def test_run_save_then_list_and_show(
-    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_save_then_list_and_show(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     db = tmp_path / "cli.db"
     monkeypatch.setenv("BENCHBOT_DATABASE_URL", f"sqlite+aiosqlite:///{db}")
 

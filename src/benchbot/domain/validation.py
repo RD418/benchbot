@@ -83,8 +83,7 @@ def _validate_labware(
                     severity=Severity.ERROR,
                     code="E_SLOT_OUT_OF_RANGE",
                     message=(
-                        f"Slot {placement.slot} is out of range "
-                        f"(deck has slots 1-{DECK_SLOTS})."
+                        f"Slot {placement.slot} is out of range (deck has slots 1-{DECK_SLOTS})."
                     ),
                     location=placement.id,
                 )
@@ -95,8 +94,7 @@ def _validate_labware(
                     severity=Severity.ERROR,
                     code="E_SLOT_OCCUPIED",
                     message=(
-                        f"Slot {placement.slot} already used by "
-                        f"'{slot_owner[placement.slot]}'."
+                        f"Slot {placement.slot} already used by '{slot_owner[placement.slot]}'."
                     ),
                     location=placement.id,
                 )
@@ -152,9 +150,7 @@ def _validate_steps(
     placements: dict[str, tuple[LabwarePlacement, LabwareDefinition]],
     issues: list[Issue],
 ) -> None:
-    has_tiprack = any(
-        defn.kind is LabwareKind.TIPRACK for _, defn in placements.values()
-    )
+    has_tiprack = any(defn.kind is LabwareKind.TIPRACK for _, defn in placements.values())
     needs_tip = False
 
     for index, step in enumerate(protocol.steps):

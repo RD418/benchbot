@@ -8,10 +8,10 @@ such as [PyLabRobot](https://github.com/PyLabRobot/pylabrobot) and
 [PyHamilton](https://github.com/dgretton/pyhamilton), but is a self-contained
 simulator with **no hardware required**.
 
-> **Status:** Milestones 1–5 are implemented — domain core + validation,
-> simulation engine, mock instruments + seeded faults + retry/recovery,
-> event-sourced SQLite persistence, and a FastAPI service + Typer CLI. Docker
-> and CI polish remain (M6) — see the roadmap below.
+> **Status:** Feature-complete (M1–M6). Domain core + validation, simulation
+> engine, mock instruments + seeded faults + retry/recovery, event-sourced
+> SQLite persistence, a FastAPI service + Typer CLI, and Docker + CI are all in
+> place — see the roadmap below.
 
 ## Why it's interesting
 
@@ -276,10 +276,69 @@ These depend on live deck state and can only be caught while executing:
 
 ## Simulated work-cell assumptions
 
-- A single deck with 12 slots; one labware instance per slot.
-- Single-channel pipetting semantics (one well at a time).
-- Volumes are in microliters; geometry uses single-letter rows (A–Z).
-- No physical timing/collision modeling in M1 — that arrives with the engine.
+The simulation is intentionally a faithful-but-bounded model. Explicit
+assumptions:
+
+- A single deck with **12 slots**; exactly one labware instance per slot.
+- **Single-channel** pipetting — one well aspirated/dispensed at a time.
+- One mounted tip at a time; a fresh tip starts empty. Reusing a tip across
+  different source wells is allowed but flagged (`W_TIP_CARRYOVER`).
+- Volumes are in **microliters**; well geometry uses single-letter rows (A–Z).
+- Liquids are tracked only by **volume**, not by species/concentration; there is
+  no evaporation, mixing kinetics, or temperature.
+- **No physical timing or collision modeling** — steps execute logically, not in
+  wall-clock time. Instrument latency is abstracted into the fault policy.
+- The mock instrument models the **communication channel** (frames, ACK/NAK,
+  faults), not motor kinematics.
+
+## Failure cases & reproduction
+
+BenchBot is designed so every failure is reproducible. Static failures are
+deterministic by construction; runtime/hardware failures are deterministic given
+a seed.
+
+| Scenario | How to reproduce |
+| --- | --- |
+| Static validation errors | `uv run benchbot validate examples/invalid_protocol.yaml` (exits 1, prints every `E_*` code). |
+| Aspirate from an (under-filled) well | A `transfer` whose volume exceeds the source's current volume → `E_INSUFFICIENT_VOLUME`. |
+| Overfill a destination | Transfer into a well already near capacity → `E_OVERFILL`. |
+| Tip carryover warning | Reuse a tip across two source wells (`new_tip: false`) → `W_TIP_CARRYOVER` (run still completes). |
+| Transient fault that recovers | `uv run benchbot run examples/serial_dilution.yaml --seed 7 --transient-rate 0.3` → watch `retry_scheduled` events; run completes. |
+| Unrecoverable hardware fault | `uv run benchbot run examples/serial_dilution.yaml --seed 1 --hard-rate 1.0` → `recovery_failed`, exits 1. |
+| Retries exhausted | `--transient-rate 1.0 --max-attempts 2` → every attempt NAKs → `E_INSTRUMENT_NAK`. |
+
+Because faults come from a seeded RNG, re-running any command with the same
+`--seed` (and rates) reproduces the identical event stream — including over the
+HTTP API via the `faults`/`retry` request fields.
+
+## Running with Docker
+
+```bash
+docker compose up --build      # builds, migrates, serves on :8000
+curl localhost:8000/health
+```
+
+The image installs dependencies from `uv.lock` (reproducible), runs
+`alembic upgrade head` on startup, then serves via uvicorn. Run history is
+persisted to a named volume (`benchbot-data` → `/data/benchbot.db`), so it
+survives restarts. A `HEALTHCHECK` probes `/health`.
+
+## Development
+
+```bash
+uv sync                       # install runtime + dev dependencies
+uv run pytest                 # tests + coverage
+uv run ruff check . && uv run ruff format --check .   # lint + format
+uv run mypy                   # strict type check
+uv run alembic revision --autogenerate -m "msg"       # new migration
+uv run alembic upgrade head   # apply migrations
+```
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push/PR: ruff lint, ruff format check,
+mypy (strict), the pytest suite, and an `alembic upgrade head` + `alembic check`
+step that fails the build if the migrations ever drift from the ORM models.
 
 ## Roadmap
 
@@ -288,7 +347,7 @@ These depend on live deck state and can only be caught while executing:
 3. **M3 — Mock serial instruments + seeded faults + retry/recovery** ✅
 4. **M4 — SQLite persistence (event-sourced run log via SQLAlchemy/Alembic)** ✅
 5. **M5 — FastAPI service + Typer CLI** ✅
-6. **M6 — Docker, CI, expanded docs**
+6. **M6 — Docker, CI, expanded docs** ✅
 
 ## Project layout
 
@@ -321,6 +380,10 @@ src/benchbot/cli.py     # Typer CLI (validate / run / list / show / events / ser
 migrations/             # Alembic migrations (async env, initial schema)
 examples/               # sample protocols (one valid, one broken)
 tests/                  # pytest suite
+Dockerfile              # uv-based image: migrate then serve
+docker-compose.yml      # one-command stack with a persistent volume
+docker/entrypoint.sh    # alembic upgrade head + uvicorn
+.github/workflows/ci.yml  # ruff + mypy + pytest + migration drift check
 ```
 
 ## License

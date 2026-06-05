@@ -31,9 +31,7 @@ def test_no_faults_always_acks() -> None:
 
 
 def test_scripted_faults_map_to_exceptions() -> None:
-    inst = MockSerialInstrument(
-        ScriptedFaults([Outcome.TRANSIENT, Outcome.TIMEOUT, Outcome.HARD])
-    )
+    inst = MockSerialInstrument(ScriptedFaults([Outcome.TRANSIENT, Outcome.TIMEOUT, Outcome.HARD]))
     with pytest.raises(NakError):
         inst.send(Command(name="A"))
     with pytest.raises(InstrumentTimeout):

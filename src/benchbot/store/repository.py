@@ -42,9 +42,7 @@ class RunStore:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._sf = session_factory
 
-    async def save_result(
-        self, result: RunResult, *, protocol_name: str, total_steps: int
-    ) -> str:
+    async def save_result(self, result: RunResult, *, protocol_name: str, total_steps: int) -> str:
         """Persist a completed :class:`RunResult`; return the new run id."""
         run_id = str(uuid4())
         async with self._sf() as session, session.begin():
@@ -84,11 +82,7 @@ class RunStore:
 
     async def get_events(self, run_id: str) -> list[Event]:
         async with self._sf() as session:
-            stmt = (
-                select(EventRow)
-                .where(EventRow.run_id == run_id)
-                .order_by(EventRow.seq)
-            )
+            stmt = select(EventRow).where(EventRow.run_id == run_id).order_by(EventRow.seq)
             rows = (await session.scalars(stmt)).all()
             return [_EVENT_ADAPTER.validate_python(row.payload) for row in rows]
 

@@ -1,0 +1,13 @@
+services:
+  benchbot:
+    build: .
+    image: benchbot:latest
+    ports:
+      - "8000:8000"
+    environment:
+      BENCHBOT_DATABASE_URL: "sqlite+aiosqlite:////data/benchbot.db"
+    volumes:
+      - benchbot-data:/data
+
+volumes:
+  benchbot-data:

@@ -143,7 +143,5 @@ class DeckState:
     def snapshot(self) -> dict[str, float]:
         """Return non-empty well volumes, rounded for readability."""
         return {
-            ref: round(vol, 6)
-            for ref, vol in sorted(self._volumes.items())
-            if abs(vol) > EPSILON
+            ref: round(vol, 6) for ref, vol in sorted(self._volumes.items()) if abs(vol) > EPSILON
         }
