@@ -17,11 +17,14 @@ from fastapi import FastAPI
 from benchbot.api.routes import router
 from benchbot.store.db import create_all, make_engine, make_session_factory
 from benchbot.store.repository import RunStore
+from benchbot.workcell.cell import build_default_workcell
 
 
 def create_app(store: RunStore | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # A fresh work cell per app instance (in-memory; holds live device health).
+        app.state.workcell = build_default_workcell()
         if store is not None:
             app.state.store = store
             yield

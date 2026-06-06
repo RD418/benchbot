@@ -18,6 +18,7 @@ from typing import TypeVar
 import typer
 
 from benchbot.domain.loader import load_protocol_file
+from benchbot.domain.protocol import ProtocolBuilder
 from benchbot.domain.validation import validate as validate_protocol
 from benchbot.engine.events import Event
 from benchbot.engine.retry import RetryPolicy
@@ -26,6 +27,15 @@ from benchbot.instruments.faults import FaultPolicy, NoFaults, RandomFaults
 from benchbot.instruments.mock_serial import MockSerialInstrument
 from benchbot.store.db import create_all, make_engine, make_session_factory
 from benchbot.store.repository import RunStore
+from benchbot.workcell.cell import WorkflowStatus, build_default_workcell
+from benchbot.workcell.events import WorkflowEvent
+from benchbot.workcell.recovery import Disposition, RecoveryPolicy
+from benchbot.workcell.workflow import (
+    IncubateTask,
+    ReadPlateTask,
+    RunProtocolTask,
+    Workflow,
+)
 
 app = typer.Typer(
     help="BenchBot - simulated lab-automation protocol runner.",
@@ -127,6 +137,44 @@ def events(run_id: str) -> None:
         typer.echo(_format_event(event))
 
 
+@app.command(name="workcell-demo")
+def workcell_demo(
+    seed: int = typer.Option(0, help="RNG seed for deterministic fault injection."),
+    hard_rate: float = typer.Option(
+        0.0, help="Hard-fault rate injected into the incubator (inc1)."
+    ),
+    halt: bool = typer.Option(False, help="Use a HALT recovery policy instead of SKIP."),
+) -> None:
+    """Run a 3-device sample workflow (liquid handler + incubator + plate reader)."""
+    cell = build_default_workcell()
+    if hard_rate:
+        cell.devices["inc1"].set_faults(RandomFaults(seed=seed, hard_rate=hard_rate))
+    recovery = RecoveryPolicy(default=Disposition.HALT) if halt else None
+
+    result = cell.run_workflow(_demo_workflow(), recovery)
+
+    for event in result.events:
+        typer.echo(_format_wf_event(event))
+    typer.echo("")
+    for task in result.tasks:
+        note = task.detail or (task.failure.code if task.failure else "")
+        typer.echo(f"  task {task.id:<10} {task.outcome.value:<10} {note}")
+    typer.echo("")
+    for device in cell.health().devices:
+        typer.echo(
+            f"  {device.name:<8} {device.health.value:<9} "
+            f"commands={device.commands} errors={device.errors} rate={device.error_rate}"
+        )
+
+    ok = result.status is WorkflowStatus.COMPLETED
+    typer.secho(
+        f"workflow: {result.status.value}",
+        fg=typer.colors.GREEN if ok else typer.colors.YELLOW,
+    )
+    if result.status in (WorkflowStatus.HALTED, WorkflowStatus.INVALID):
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def serve(host: str = "127.0.0.1", port: int = 8000) -> None:
     """Launch the HTTP API with uvicorn."""
@@ -159,6 +207,34 @@ def _format_event(event: Event) -> str:
     fields = ("action", "detail", "command", "attempt", "code", "message", "steps_completed")
     parts = [str(getattr(event, f)) for f in fields if getattr(event, f, None) is not None]
     return f"[{event.seq:>3}] {event.type:<16} " + "  ".join(parts)
+
+
+def _format_wf_event(event: WorkflowEvent) -> str:
+    fields = ("task_id", "device", "action", "detail", "reason", "attempt", "code", "status")
+    parts = [str(getattr(event, f)) for f in fields if getattr(event, f, None) is not None]
+    return f"[{event.seq:>3}] {event.type:<19} " + "  ".join(parts)
+
+
+def _demo_workflow() -> Workflow:
+    """A small assay: prep a plate, incubate it, then read it (read depends on incubate)."""
+    protocol = (
+        ProtocolBuilder("plate prep")
+        .add_plate("p", "plate_96_wellplate_200ul", slot=1)
+        .add_tiprack("t", "tiprack_300ul", slot=2)
+        .fill("p:A1", 200)
+        .transfer("p:A1", "p:A2", 100)
+        .build()
+    )
+    return Workflow(
+        name="assay",
+        tasks=[
+            RunProtocolTask(id="prep", device="lh1", protocol=protocol),
+            IncubateTask(id="incubate", device="inc1", minutes=30, celsius=37),
+            ReadPlateTask(
+                id="read", device="reader1", plate="p", wavelength_nm=600, depends_on=["incubate"]
+            ),
+        ],
+    )
 
 
 def _print_outcome(result: RunResult) -> None:

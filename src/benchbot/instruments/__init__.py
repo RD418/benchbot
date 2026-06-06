@@ -19,10 +19,13 @@ from benchbot.instruments.faults import (
     RandomFaults,
     ScriptedFaults,
 )
+from benchbot.instruments.mock_base import BaseMockInstrument
 from benchbot.instruments.mock_serial import MockSerialInstrument
+from benchbot.instruments.mock_tcp import MockTcpInstrument
 
 __all__ = [
     "Ack",
+    "BaseMockInstrument",
     "Command",
     "FaultPolicy",
     "HardwareError",
@@ -30,6 +33,7 @@ __all__ = [
     "InstrumentError",
     "InstrumentTimeout",
     "MockSerialInstrument",
+    "MockTcpInstrument",
     "NakError",
     "NoFaults",
     "Outcome",

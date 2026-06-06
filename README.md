@@ -1,9 +1,11 @@
 # BenchBot
 
-A Python protocol runner for **simulated lab automation**. BenchBot models
-robotic liquid-handling work-cells — plates, wells, tip racks, transfers — and
-runs protocols against a deterministic software simulation, with structured
-validation and run logs. It's inspired by open-source lab-automation tooling
+A Python protocol runner and **work-cell orchestrator** for simulated lab
+automation. BenchBot models robotic liquid-handling — plates, wells, tip racks,
+transfers — runs protocols against a deterministic software simulation, and
+coordinates **multiple heterogeneous instruments** (liquid handler, incubator,
+plate reader) through dependency-ordered workflows with error recovery and
+graceful degradation. It's inspired by open-source lab-automation tooling
 such as [PyLabRobot](https://github.com/PyLabRobot/pylabrobot) and
 [PyHamilton](https://github.com/dgretton/pyhamilton), but is a self-contained
 simulator with **no hardware required**.
@@ -20,6 +22,10 @@ simulator with **no hardware required**.
   "run it."
 - **Two authoring paths** — declarative YAML/JSON *and* a fluent Python builder —
   that compile to the same validated model.
+- **Multi-device orchestration with graceful degradation** — a work cell runs
+  dependency-ordered workflows across several instruments; when one device fails
+  it is quarantined and its dependents skipped, while independent work continues
+  (no cascading failure).
 
 ## Tech stack
 
@@ -161,6 +167,8 @@ uv run benchbot run examples/serial_dilution.yaml \
 uv run benchbot list                                        # persisted runs
 uv run benchbot show <run_id>                               # run summary
 uv run benchbot events <run_id>                             # stored event stream
+uv run benchbot workcell-demo                               # multi-device workflow demo
+uv run benchbot workcell-demo --hard-rate 1.0 --seed 1      # ... with a failing device
 uv run benchbot serve --port 8000                           # launch the HTTP API
 ```
 
@@ -184,6 +192,8 @@ Interactive docs are served at `/docs`. Endpoints:
 | `GET /runs/{id}` | Run status + metadata. |
 | `GET /runs/{id}/events` | The full event stream. |
 | `GET /runs/{id}/diagnostics` | Command/retry/recovery counts + failure + warnings. |
+| `POST /workflows` | Run a multi-device workflow; returns per-task outcomes. |
+| `GET /workcell/health` | Per-device status, error rates, and quarantine state. |
 
 A `POST /runs` body can tune deterministic faults and retries:
 
@@ -269,6 +279,50 @@ These depend on live deck state and can only be caught while executing:
 | `E_INSTRUMENT_TIMEOUT` | error | Instrument timed out after retries were exhausted. |
 | `E_HARDWARE_FAILURE` | error | Fatal hardware fault (never retried). |
 
+## Work-cell orchestration
+
+A single liquid handler is rarely the whole story — real assays span several
+instruments. The **work cell** coordinates multiple devices behind one
+abstraction and runs a *workflow*: a DAG of tasks, each targeting a device, with
+`depends_on` edges for timing (e.g. *read* must run after *incubate*).
+
+Devices and transports (all behind the same `Instrument` seam):
+
+| Device | Kind | Transport (mock) | Tasks |
+| --- | --- | --- | --- |
+| `lh1` | liquid handler | serial framing (`>ASPIRATE …`) | `run_protocol` |
+| `inc1` | incubator | TCP/JSON | `incubate` |
+| `reader1` | plate reader | TCP/JSON | `read_plate` |
+
+Three layers of failure handling, from narrow to broad:
+
+1. **Command retry** (per device) — transient NAK/timeout retried with backoff.
+2. **Task recovery** (`RecoveryPolicy`) — when a task fails after retries, decide
+   per failure code: `RETRY` the task, `SKIP` it (quarantine the device, keep
+   going), or `HALT` the workflow. Default is `SKIP`.
+3. **Device quarantine** — a `SKIP`'d failure marks the device `DOWN`; its
+   dependent tasks are skipped, but **independent tasks keep running**. One
+   instrument failing never cascades through the cell.
+
+```python
+from benchbot.workcell import WorkCell, Workflow, IncubateTask, ReadPlateTask, build_default_workcell
+
+cell = build_default_workcell()
+workflow = Workflow(name="assay", tasks=[
+    IncubateTask(id="incubate", device="inc1", minutes=30, celsius=37),
+    ReadPlateTask(id="read", device="reader1", plate="p", depends_on=["incubate"]),
+])
+result = cell.run_workflow(workflow)
+print(result.status)          # completed | degraded | halted | invalid
+print(cell.health())          # per-device status + error rates
+```
+
+Try `uv run benchbot workcell-demo --hard-rate 1.0` to watch the incubator fail,
+get quarantined, its dependent get skipped, and the independent liquid-handler
+task still complete (status `degraded`, not `failed`). Workflow validation has
+its own codes: `E_UNKNOWN_DEVICE`, `E_DEVICE_KIND_MISMATCH`,
+`E_UNKNOWN_DEPENDENCY`, `E_DEPENDENCY_CYCLE`, `E_DUP_TASK_ID`, `E_SELF_DEPENDENCY`.
+
 ## Simulated work-cell assumptions
 
 The simulation is intentionally a faithful-but-bounded model. Explicit
@@ -285,6 +339,12 @@ assumptions:
   wall-clock time. Instrument latency is abstracted into the fault policy.
 - The mock instrument models the **communication channel** (frames, ACK/NAK,
   faults), not motor kinematics.
+- The work cell executes tasks **sequentially in dependency order** — the focus
+  is dependency ordering and failure isolation, not a real-time scheduler for
+  overlapping device operations.
+- Work-cell state (device health, counters) is **in-memory**; workflow runs are
+  not persisted to SQLite (single-device runs are). Persisting them would reuse
+  the same event-sourcing approach.
 
 ## Failure cases & reproduction
 
@@ -352,7 +412,15 @@ src/benchbot/engine/    # stateful simulation (depends only on domain)
 src/benchbot/instruments/  # the hardware seam (depends on domain)
   base.py               # Instrument interface, Command/Ack frames, error types
   faults.py             # deterministic fault policies (seeded / scripted)
-  mock_serial.py        # simulated serial instrument
+  mock_base.py          # shared fault/ACK semantics for mock instruments
+  mock_serial.py        # serial-framed instrument (liquid handler)
+  mock_tcp.py           # TCP/JSON instrument (reader, incubator)
+src/benchbot/workcell/  # multi-device orchestration (depends on engine)
+  devices.py            # Device: instrument + kind + health + counters
+  workflow.py           # Workflow DAG, tasks, validation, topological order
+  recovery.py           # per-failure-mode recovery policy (retry/skip/halt)
+  cell.py               # WorkCell: schedule, recover, quarantine, health
+  events.py             # workflow event types + log
 src/benchbot/store/     # persistence (depends on engine + domain)
   models.py             # SQLAlchemy ORM: runs + append-only events tables
   db.py                 # async engine / session / URL config

@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 from benchbot.domain.errors import Issue
 from benchbot.domain.protocol import Protocol
 from benchbot.engine.runner import RunStatus
+from benchbot.workcell.recovery import RecoveryPolicy
+from benchbot.workcell.workflow import Workflow
 
 
 class FaultConfig(BaseModel):
@@ -56,3 +58,14 @@ class Diagnostics(BaseModel):
     retry_count: int
     recovery_failures: int
     warnings: list[Issue] = []
+
+
+# --- Work cell ----------------------------------------------------------------
+
+
+class WorkflowRequest(BaseModel):
+    """Submit a workflow, optionally injecting faults per device and tuning recovery."""
+
+    workflow: Workflow
+    faults: dict[str, FaultConfig] = {}
+    recovery: RecoveryPolicy | None = None

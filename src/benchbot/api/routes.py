@@ -15,6 +15,7 @@ from benchbot.api.schemas import (
     Diagnostics,
     RunRequest,
     RunSummary,
+    WorkflowRequest,
 )
 from benchbot.domain.errors import Issue, Severity, ValidationResult
 from benchbot.domain.protocol import Protocol
@@ -32,6 +33,7 @@ from benchbot.engine.runner import RunResult, SimulationRunner
 from benchbot.instruments.faults import FaultPolicy, NoFaults, RandomFaults
 from benchbot.instruments.mock_serial import MockSerialInstrument
 from benchbot.store.repository import RunStore, StoredRun
+from benchbot.workcell.cell import WorkCell, WorkCellHealth, WorkflowResult
 
 router = APIRouter()
 
@@ -42,8 +44,15 @@ def get_store(request: Request) -> RunStore:
     return store
 
 
-#: Reusable typed dependency for the run store.
+def get_workcell(request: Request) -> WorkCell:
+    """Dependency: the application's work cell (set during lifespan)."""
+    cell: WorkCell = request.app.state.workcell
+    return cell
+
+
+#: Reusable typed dependencies.
 StoreDep = Annotated[RunStore, Depends(get_store)]
+WorkCellDep = Annotated[WorkCell, Depends(get_workcell)]
 
 
 @router.get("/health")
@@ -125,6 +134,29 @@ async def get_diagnostics(run_id: str, store: StoreDep) -> Diagnostics:
         recovery_failures=sum(isinstance(e, RecoveryFailed) for e in events),
         warnings=warnings,
     )
+
+
+@router.post("/workflows", response_model=WorkflowResult)
+async def submit_workflow(request: WorkflowRequest, cell: WorkCellDep) -> WorkflowResult:
+    try:
+        for device_name, fault in request.faults.items():
+            if device_name in cell.devices:
+                cell.devices[device_name].set_faults(
+                    RandomFaults(
+                        seed=fault.seed,
+                        transient_rate=fault.transient_rate,
+                        timeout_rate=fault.timeout_rate,
+                        hard_rate=fault.hard_rate,
+                    )
+                )
+    except ValueError as exc:  # invalid fault rates
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return cell.run_workflow(request.workflow, request.recovery)
+
+
+@router.get("/workcell/health", response_model=WorkCellHealth)
+async def workcell_health(cell: WorkCellDep) -> WorkCellHealth:
+    return cell.health()
 
 
 # --- Helpers -------------------------------------------------------------------
