@@ -13,6 +13,9 @@ simulator with **no hardware required**.
 > SQLite persistence, a FastAPI service + Typer CLI, and Docker + CI are all in
 > place — see the roadmap below.
 
+📐 **Architecture diagrams** (layers, run pipeline, step sequence, event sourcing):
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 ## Why it's interesting
 
 - **Deterministic, seeded fault injection** (engine milestone) makes hardware
@@ -384,6 +387,7 @@ Dockerfile              # uv-based image: migrate then serve
 docker-compose.yml      # one-command stack with a persistent volume
 docker/entrypoint.sh    # alembic upgrade head + uvicorn
 .github/workflows/ci.yml  # ruff + mypy + pytest + migration drift check
+docs/ARCHITECTURE.md      # Mermaid diagrams: layers, pipeline, sequence, sourcing
 ```
 
 ## License
