@@ -5,7 +5,7 @@ description = "Python protocol runner for simulated lab automation"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "BenchBot" }]
+authors = [{ name = "Rayane Drissi" }]
 dependencies = [
     "pydantic>=2.6",
     "pyyaml>=6.0",
