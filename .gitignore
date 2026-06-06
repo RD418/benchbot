@@ -27,3 +27,6 @@ coverage.xml
 .DS_Store
 .idea/
 .vscode/
+
+# Architecture diagrams (local only, not pushed)
+docs/ARCHITECTURE.md

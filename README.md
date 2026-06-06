@@ -8,14 +8,6 @@ such as [PyLabRobot](https://github.com/PyLabRobot/pylabrobot) and
 [PyHamilton](https://github.com/dgretton/pyhamilton), but is a self-contained
 simulator with **no hardware required**.
 
-> **Status:** Feature-complete (M1–M6). Domain core + validation, simulation
-> engine, mock instruments + seeded faults + retry/recovery, event-sourced
-> SQLite persistence, a FastAPI service + Typer CLI, and Docker + CI are all in
-> place — see the roadmap below.
-
-📐 **Architecture diagrams** (layers, run pipeline, step sequence, event sourcing):
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-
 ## Why it's interesting
 
 - **Deterministic, seeded fault injection** (engine milestone) makes hardware
@@ -343,15 +335,6 @@ uv run alembic upgrade head   # apply migrations
 mypy (strict), the pytest suite, and an `alembic upgrade head` + `alembic check`
 step that fails the build if the migrations ever drift from the ORM models.
 
-## Roadmap
-
-1. **M1 — Domain core + validation** ✅
-2. **M2 — Simulation engine + virtual deck state + event emission** ✅
-3. **M3 — Mock serial instruments + seeded faults + retry/recovery** ✅
-4. **M4 — SQLite persistence (event-sourced run log via SQLAlchemy/Alembic)** ✅
-5. **M5 — FastAPI service + Typer CLI** ✅
-6. **M6 — Docker, CI, expanded docs** ✅
-
 ## Project layout
 
 ```
@@ -387,7 +370,6 @@ Dockerfile              # uv-based image: migrate then serve
 docker-compose.yml      # one-command stack with a persistent volume
 docker/entrypoint.sh    # alembic upgrade head + uvicorn
 .github/workflows/ci.yml  # ruff + mypy + pytest + migration drift check
-docs/ARCHITECTURE.md      # Mermaid diagrams: layers, pipeline, sequence, sourcing
 ```
 
 ## License
