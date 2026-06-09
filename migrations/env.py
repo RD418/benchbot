@@ -15,7 +15,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from benchbot.store.db import get_database_url
+from benchbot.store.db import engine_connect_args, get_database_url
 from benchbot.store.models import Base
 
 config = context.config
@@ -48,9 +48,15 @@ def _do_run_migrations(connection: Connection) -> None:
 
 
 async def run_migrations_online() -> None:
+    url = get_database_url()
     section = config.get_section(config.config_ini_section, {})
-    section["sqlalchemy.url"] = get_database_url()
-    connectable = async_engine_from_config(section, prefix="sqlalchemy.", poolclass=pool.NullPool)
+    section["sqlalchemy.url"] = url
+    connectable = async_engine_from_config(
+        section,
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+        connect_args=engine_connect_args(url),
+    )
     async with connectable.connect() as connection:
         await connection.run_sync(_do_run_migrations)
     await connectable.dispose()
