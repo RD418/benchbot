@@ -308,6 +308,23 @@ body {
   font-size: 13px;
 }
 
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.export {
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+.export:hover {
+  border-color: var(--accent);
+}
+
 /* DAG */
 .dag {
   width: 100%;

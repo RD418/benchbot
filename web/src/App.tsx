@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { getWorkflow, getWorkflowEvents, listWorkflows, runDemo, type RunOptions } from "./api";
+import {
+  exportUrl,
+  getWorkflow,
+  getWorkflowEvents,
+  listWorkflows,
+  runDemo,
+  type RunOptions,
+} from "./api";
 import { Controls } from "./components/Controls";
 import { DagView } from "./components/DagView";
 import { DevicePanel } from "./components/DevicePanel";
@@ -74,7 +81,12 @@ export default function App() {
 
       {run && (
         <section className="panel">
-          <h2>Workflow graph — {run.name}</h2>
+          <div className="panel-head">
+            <h2>Workflow graph — {run.name}</h2>
+            <a className="export" href={exportUrl(run.id)}>
+              ⬇ data package
+            </a>
+          </div>
           <DagView tasks={run.workflow.tasks} outcomes={outcomes} />
         </section>
       )}

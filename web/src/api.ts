@@ -26,6 +26,10 @@ export function getWorkflowEvents(id: string): Promise<WorkflowEvent[]> {
   return getJSON(`/workflows/${id}/events`);
 }
 
+export function exportUrl(id: string): string {
+  return `${API_URL}/workflows/${id}/export`;
+}
+
 export interface DemoOptions {
   seed: number;
   hardRate: number;
