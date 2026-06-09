@@ -199,6 +199,7 @@ Interactive docs are served at `/docs`. Endpoints:
 | `GET /workflows` | List persisted workflow runs (most recent first). |
 | `GET /workflows/{id}` | A workflow run: status, the DAG definition, per-task outcomes, device health. |
 | `GET /workflows/{id}/events` | The workflow's event stream. |
+| `GET /workflows/{id}/export` | Download a self-contained run **data package** (JSON). |
 | `GET /workcell/health` | Per-device status, error rates, and quarantine state. |
 
 A `POST /runs` body can tune deterministic faults and retries:
@@ -232,6 +233,12 @@ completes (graceful degradation, visible).
 uv run benchbot serve --port 8000     # API
 cd web && npm install && npm run dev   # dashboard on http://localhost:5173
 ```
+
+Each run can be exported as a **data package** (`GET /workflows/{id}/export`, or
+the download button in the inspector): a self-contained JSON with the run's
+definition, per-task outcomes, device metrics derived from the event stream
+(retries, errors, quarantine), and the full event stream — reproducible run
+artifacts, not fabricated results.
 
 Experiments are authored as code / YAML / API, not in the UI — the lab is
 agent- and code-driven, so the dashboard is purely a monitoring lens.
