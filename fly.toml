@@ -1,0 +1,27 @@
+# Fly.io config for the BenchBot API (runs the repo Dockerfile: migrate -> serve).
+# Change `app` to your own name (or let `fly launch` set it), then `fly deploy`.
+app = "benchbot-api"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Scale to zero between demos to keep it free; first request cold-starts.
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"
