@@ -168,9 +168,7 @@ class WorkflowRunPackage(BaseModel):
     events: list[WorkflowEvent]
 
 
-def _device_metrics(
-    run: StoredWorkflowRun, events: list[WorkflowEvent]
-) -> list[DeviceMetrics]:
+def _device_metrics(run: StoredWorkflowRun, events: list[WorkflowEvent]) -> list[DeviceMetrics]:
     names = list(run.device_health.keys())
     retries = dict.fromkeys(names, 0)
     errors = dict.fromkeys(names, 0)
