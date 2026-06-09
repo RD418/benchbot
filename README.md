@@ -26,6 +26,9 @@ simulator with **no hardware required**.
   dependency-ordered workflows across several instruments; when one device fails
   it is quarantined and its dependents skipped, while independent work continues
   (no cascading failure).
+- **Live observability dashboard** — a React/TypeScript UI streams a run over
+  Server-Sent Events and animates device health, task progress, and the event
+  timeline as they happen (see [`web/`](web/)).
 
 ## Tech stack
 
@@ -207,6 +210,25 @@ A `POST /runs` body can tune deterministic faults and retries:
 
 The diagnostics response makes retry/recovery observable, e.g.
 `{"command_count": 5, "retry_count": 2, "recovery_failures": 0, ...}`.
+
+For live monitoring, `GET /stream/demo` is a **Server-Sent Events** stream of a
+work-cell run (paced so a browser can animate it); the
+[dashboard](web/) consumes it.
+
+## Live dashboard
+
+A read-only **React + TypeScript** observability UI lives in [`web/`](web/). It
+streams a run over SSE and animates device health, task outcomes, and the event
+timeline — drag the *incubator fault rate* to `1.0` and watch a device get
+quarantined while independent work still finishes (graceful degradation, live).
+
+```bash
+uv run benchbot serve --port 8000     # API
+cd web && npm install && npm run dev   # dashboard on http://localhost:5173
+```
+
+Experiments are authored as code / YAML / API, not in the UI — the lab is
+agent- and code-driven, so the dashboard is purely a monitoring lens.
 
 ## Protocol format
 
@@ -432,6 +454,7 @@ src/benchbot/api/       # FastAPI service (thin adapter over engine + store)
   schemas.py            # request/response models
 src/benchbot/cli.py     # Typer CLI (validate / run / list / show / events / serve)
 migrations/             # Alembic migrations (async env, initial schema)
+web/                    # React + TypeScript live observability dashboard (SSE)
 examples/               # sample protocols (one valid, one broken)
 tests/                  # pytest suite
 Dockerfile              # uv-based image: migrate then serve
