@@ -266,6 +266,48 @@ body {
   font-size: 13px;
 }
 
+/* DAG */
+.dag {
+  width: 100%;
+  height: auto;
+  max-height: 320px;
+}
+.dag .edge {
+  stroke: var(--muted);
+  stroke-width: 2;
+}
+.dag .edge-broken {
+  stroke: var(--down);
+  stroke-dasharray: 5 4;
+  opacity: 0.8;
+}
+.dag .node {
+  fill: var(--bg);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+.dag .node-completed {
+  stroke: var(--ok);
+}
+.dag .node-failed {
+  stroke: var(--down);
+  fill: rgba(248, 81, 73, 0.08);
+}
+.dag .node-skipped {
+  stroke: var(--muted);
+  stroke-dasharray: 4 3;
+}
+.dag .node-id {
+  fill: var(--text);
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+}
+.dag .node-dev {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
 /* Timeline */
 .events {
   max-height: 280px;
