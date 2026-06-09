@@ -18,7 +18,6 @@ from typing import TypeVar
 import typer
 
 from benchbot.domain.loader import load_protocol_file
-from benchbot.domain.protocol import ProtocolBuilder
 from benchbot.domain.validation import validate as validate_protocol
 from benchbot.engine.events import Event
 from benchbot.engine.retry import RetryPolicy
@@ -27,15 +26,13 @@ from benchbot.instruments.faults import FaultPolicy, NoFaults, RandomFaults
 from benchbot.instruments.mock_serial import MockSerialInstrument
 from benchbot.store.db import create_all, make_engine, make_session_factory
 from benchbot.store.repository import RunStore
-from benchbot.workcell.cell import WorkflowStatus, build_default_workcell
+from benchbot.workcell.cell import (
+    WorkflowStatus,
+    build_default_workcell,
+    build_demo_workflow,
+)
 from benchbot.workcell.events import WorkflowEvent
 from benchbot.workcell.recovery import Disposition, RecoveryPolicy
-from benchbot.workcell.workflow import (
-    IncubateTask,
-    ReadPlateTask,
-    RunProtocolTask,
-    Workflow,
-)
 
 app = typer.Typer(
     help="BenchBot - simulated lab-automation protocol runner.",
@@ -151,7 +148,7 @@ def workcell_demo(
         cell.devices["inc1"].set_faults(RandomFaults(seed=seed, hard_rate=hard_rate))
     recovery = RecoveryPolicy(default=Disposition.HALT) if halt else None
 
-    result = cell.run_workflow(_demo_workflow(), recovery)
+    result = cell.run_workflow(build_demo_workflow(), recovery)
 
     for event in result.events:
         typer.echo(_format_wf_event(event))
@@ -213,28 +210,6 @@ def _format_wf_event(event: WorkflowEvent) -> str:
     fields = ("task_id", "device", "action", "detail", "reason", "attempt", "code", "status")
     parts = [str(getattr(event, f)) for f in fields if getattr(event, f, None) is not None]
     return f"[{event.seq:>3}] {event.type:<19} " + "  ".join(parts)
-
-
-def _demo_workflow() -> Workflow:
-    """A small assay: prep a plate, incubate it, then read it (read depends on incubate)."""
-    protocol = (
-        ProtocolBuilder("plate prep")
-        .add_plate("p", "plate_96_wellplate_200ul", slot=1)
-        .add_tiprack("t", "tiprack_300ul", slot=2)
-        .fill("p:A1", 200)
-        .transfer("p:A1", "p:A2", 100)
-        .build()
-    )
-    return Workflow(
-        name="assay",
-        tasks=[
-            RunProtocolTask(id="prep", device="lh1", protocol=protocol),
-            IncubateTask(id="incubate", device="inc1", minutes=30, celsius=37),
-            ReadPlateTask(
-                id="read", device="reader1", plate="p", wavelength_nm=600, depends_on=["incubate"]
-            ),
-        ],
-    )
 
 
 def _print_outcome(result: RunResult) -> None:

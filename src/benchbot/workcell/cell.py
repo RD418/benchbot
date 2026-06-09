@@ -21,6 +21,7 @@ from enum import StrEnum
 from pydantic import BaseModel
 
 from benchbot.domain.errors import BenchBotError, Issue, Severity, ValidationResult
+from benchbot.domain.protocol import ProtocolBuilder
 from benchbot.engine.events import CommandSent, RecoveryFailed, RetryScheduled
 from benchbot.engine.runner import SimulationRunner
 from benchbot.instruments.base import Ack, Command, InstrumentError, RetryableError
@@ -342,3 +343,25 @@ def build_default_workcell() -> WorkCell:
         "inc1": Device("inc1", DeviceKind.INCUBATOR, MockTcpInstrument()),
     }
     return WorkCell(devices)
+
+
+def build_demo_workflow() -> Workflow:
+    """A small assay: prep a plate, incubate it, then read it (read depends on incubate)."""
+    protocol = (
+        ProtocolBuilder("plate prep")
+        .add_plate("p", "plate_96_wellplate_200ul", 1)
+        .add_tiprack("t", "tiprack_300ul", 2)
+        .fill("p:A1", 200)
+        .transfer("p:A1", "p:A2", 100)
+        .build()
+    )
+    return Workflow(
+        name="assay",
+        tasks=[
+            RunProtocolTask(id="prep", device="lh1", protocol=protocol),
+            IncubateTask(id="incubate", device="inc1", minutes=30, celsius=37),
+            ReadPlateTask(
+                id="read", device="reader1", plate="p", wavelength_nm=600, depends_on=["incubate"]
+            ),
+        ],
+    )

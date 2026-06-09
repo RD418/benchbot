@@ -9,15 +9,21 @@ zero-config dev/demo; production should run ``alembic upgrade head`` instead
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from benchbot.api.routes import router
 from benchbot.store.db import create_all, make_engine, make_session_factory
 from benchbot.store.repository import RunStore
 from benchbot.workcell.cell import build_default_workcell
+
+#: Dev origins allowed to call the API (the Vite dashboard). Override with
+#: BENCHBOT_CORS_ORIGINS (comma-separated).
+_DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 
 
 def create_app(store: RunStore | None = None) -> FastAPI:
@@ -42,6 +48,13 @@ def create_app(store: RunStore | None = None) -> FastAPI:
         version="0.1.0",
         summary="Simulated lab-automation protocol runner",
         lifespan=lifespan,
+    )
+    origins = os.environ.get("BENCHBOT_CORS_ORIGINS", _DEFAULT_ORIGINS).split(",")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[o.strip() for o in origins if o.strip()],
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     app.include_router(router)
     return app

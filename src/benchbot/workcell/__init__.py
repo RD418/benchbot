@@ -11,6 +11,7 @@ from benchbot.workcell.cell import (
     WorkflowResult,
     WorkflowStatus,
     build_default_workcell,
+    build_demo_workflow,
 )
 from benchbot.workcell.devices import Device, DeviceHealth, DeviceKind
 from benchbot.workcell.recovery import Disposition, RecoveryPolicy
@@ -42,5 +43,6 @@ __all__ = [
     "WorkflowResult",
     "WorkflowStatus",
     "build_default_workcell",
+    "build_demo_workflow",
     "validate_workflow",
 ]

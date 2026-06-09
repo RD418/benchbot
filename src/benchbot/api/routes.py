@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from benchbot.api.schemas import (
     Diagnostics,
@@ -17,6 +18,7 @@ from benchbot.api.schemas import (
     RunSummary,
     WorkflowRequest,
 )
+from benchbot.api.streaming import stream_demo
 from benchbot.domain.errors import Issue, Severity, ValidationResult
 from benchbot.domain.protocol import Protocol
 from benchbot.domain.validation import validate
@@ -157,6 +159,18 @@ async def submit_workflow(request: WorkflowRequest, cell: WorkCellDep) -> Workfl
 @router.get("/workcell/health", response_model=WorkCellHealth)
 async def workcell_health(cell: WorkCellDep) -> WorkCellHealth:
     return cell.health()
+
+
+@router.get("/stream/demo")
+async def stream_demo_workflow(
+    seed: int = 0, hard_rate: float = 0.0, halt: bool = False, delay: float = 0.15
+) -> StreamingResponse:
+    """SSE stream of a demo work-cell run, for the live dashboard."""
+    delay = max(0.0, min(delay, 2.0))  # clamp to a sane range
+    return StreamingResponse(
+        stream_demo(seed=seed, hard_rate=hard_rate, halt=halt, delay=delay),
+        media_type="text/event-stream",
+    )
 
 
 # --- Helpers -------------------------------------------------------------------
