@@ -41,8 +41,15 @@ from benchbot.store.repository import (
     WorkflowRunSummary,
     WorkflowStore,
 )
-from benchbot.workcell.cell import WorkCell, WorkCellHealth, WorkflowResult
+from benchbot.workcell.cell import (
+    WorkCell,
+    WorkCellHealth,
+    WorkflowResult,
+    build_default_workcell,
+    build_demo_workflow,
+)
 from benchbot.workcell.events import WorkflowEvent
+from benchbot.workcell.recovery import Disposition, RecoveryPolicy
 
 router = APIRouter()
 
@@ -172,6 +179,25 @@ async def submit_workflow(
 
     result = cell.run_workflow(request.workflow, request.recovery)
     run_id = await store.save_result(result, workflow=request.workflow)
+    return result.model_copy(update={"id": run_id})
+
+
+@router.post("/workflows/demo", response_model=WorkflowResult)
+async def run_demo_workflow(
+    store: WorkflowStoreDep, seed: int = 0, hard_rate: float = 0.0, halt: bool = False
+) -> WorkflowResult:
+    """Trigger and persist a sample multi-device run (a convenience for the dashboard).
+
+    Runs on a fresh, independent work cell so the demo is repeatable; optional
+    fault parameters drive deterministic graceful-degradation / halt scenarios.
+    """
+    cell = build_default_workcell()
+    if hard_rate > 0:
+        cell.devices["inc1"].set_faults(RandomFaults(seed=seed, hard_rate=hard_rate))
+    recovery = RecoveryPolicy(default=Disposition.HALT) if halt else None
+    workflow = build_demo_workflow()
+    result = cell.run_workflow(workflow, recovery)
+    run_id = await store.save_result(result, workflow=workflow)
     return result.model_copy(update={"id": run_id})
 
 

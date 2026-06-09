@@ -81,6 +81,18 @@ def test_missing_workflow_is_404(client: TestClient) -> None:
     assert client.get("/workflows/nope/events").status_code == 404
 
 
+def test_demo_endpoint_persists_a_run(client: TestClient) -> None:
+    healthy = client.post("/workflows/demo").json()
+    assert healthy["status"] == "completed"
+    assert healthy["id"] is not None
+
+    degraded = client.post("/workflows/demo", params={"hard_rate": 1.0, "seed": 1}).json()
+    assert degraded["status"] == "degraded"
+
+    runs = client.get("/workflows").json()
+    assert {healthy["id"], degraded["id"]} <= {r["id"] for r in runs}
+
+
 def test_workflow_degrades_under_device_fault(client: TestClient) -> None:
     body = {"workflow": _workflow_json(), "faults": {"inc1": {"seed": 1, "hard_rate": 1.0}}}
     result = client.post("/workflows", json=body).json()
