@@ -88,6 +88,8 @@ class WorkCellHealth(BaseModel):
 
 
 class WorkflowResult(BaseModel):
+    #: Set once the run is persisted (see the store); None for an in-memory result.
+    id: str | None = None
     status: WorkflowStatus
     tasks: list[TaskState] = []
     events: list[WorkflowEvent] = []

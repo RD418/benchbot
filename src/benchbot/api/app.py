@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from benchbot.api.routes import router
 from benchbot.store.db import create_all, make_engine, make_session_factory
-from benchbot.store.repository import RunStore
+from benchbot.store.repository import RunStore, WorkflowStore
 from benchbot.workcell.cell import build_default_workcell
 
 #: Dev origins allowed to call the API (the Vite dashboard). Override with
@@ -31,13 +31,11 @@ def create_app(store: RunStore | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # A fresh work cell per app instance (in-memory; holds live device health).
         app.state.workcell = build_default_workcell()
-        if store is not None:
-            app.state.store = store
-            yield
-            return
         engine = make_engine()
         await create_all(engine)
-        app.state.store = RunStore(make_session_factory(engine))
+        session_factory = make_session_factory(engine)
+        app.state.store = store or RunStore(session_factory)
+        app.state.workflow_store = WorkflowStore(session_factory)
         try:
             yield
         finally:

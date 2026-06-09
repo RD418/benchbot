@@ -57,6 +57,30 @@ def test_submit_workflow_completes(client: TestClient) -> None:
     assert all(t["outcome"] == "completed" for t in result["tasks"])
 
 
+def test_submitted_workflow_is_persisted_and_queryable(client: TestClient) -> None:
+    result = client.post("/workflows", json={"workflow": _workflow_json()}).json()
+    run_id = result["id"]
+    assert run_id is not None
+
+    listed = client.get("/workflows").json()
+    assert any(r["id"] == run_id and r["task_count"] == 3 for r in listed)
+
+    run = client.get(f"/workflows/{run_id}").json()
+    assert run["name"] == "assay"
+    assert run["status"] == "completed"
+    # The stored definition keeps the DAG edges.
+    read = next(t for t in run["workflow"]["tasks"] if t["id"] == "read")
+    assert read["depends_on"] == ["incubate"]
+
+    events = client.get(f"/workflows/{run_id}/events").json()
+    assert events[0]["type"] == "workflow_started"
+
+
+def test_missing_workflow_is_404(client: TestClient) -> None:
+    assert client.get("/workflows/nope").status_code == 404
+    assert client.get("/workflows/nope/events").status_code == 404
+
+
 def test_workflow_degrades_under_device_fault(client: TestClient) -> None:
     body = {"workflow": _workflow_json(), "faults": {"inc1": {"seed": 1, "hard_rate": 1.0}}}
     result = client.post("/workflows", json=body).json()

@@ -34,8 +34,15 @@ from benchbot.engine.retry import RetryPolicy
 from benchbot.engine.runner import RunResult, SimulationRunner
 from benchbot.instruments.faults import FaultPolicy, NoFaults, RandomFaults
 from benchbot.instruments.mock_serial import MockSerialInstrument
-from benchbot.store.repository import RunStore, StoredRun
+from benchbot.store.repository import (
+    RunStore,
+    StoredRun,
+    StoredWorkflowRun,
+    WorkflowRunSummary,
+    WorkflowStore,
+)
 from benchbot.workcell.cell import WorkCell, WorkCellHealth, WorkflowResult
+from benchbot.workcell.events import WorkflowEvent
 
 router = APIRouter()
 
@@ -52,9 +59,16 @@ def get_workcell(request: Request) -> WorkCell:
     return cell
 
 
+def get_workflow_store(request: Request) -> WorkflowStore:
+    """Dependency: the application's workflow store (set during lifespan)."""
+    store: WorkflowStore = request.app.state.workflow_store
+    return store
+
+
 #: Reusable typed dependencies.
 StoreDep = Annotated[RunStore, Depends(get_store)]
 WorkCellDep = Annotated[WorkCell, Depends(get_workcell)]
+WorkflowStoreDep = Annotated[WorkflowStore, Depends(get_workflow_store)]
 
 
 @router.get("/health")
@@ -139,7 +153,9 @@ async def get_diagnostics(run_id: str, store: StoreDep) -> Diagnostics:
 
 
 @router.post("/workflows", response_model=WorkflowResult)
-async def submit_workflow(request: WorkflowRequest, cell: WorkCellDep) -> WorkflowResult:
+async def submit_workflow(
+    request: WorkflowRequest, cell: WorkCellDep, store: WorkflowStoreDep
+) -> WorkflowResult:
     try:
         for device_name, fault in request.faults.items():
             if device_name in cell.devices:
@@ -153,7 +169,30 @@ async def submit_workflow(request: WorkflowRequest, cell: WorkCellDep) -> Workfl
                 )
     except ValueError as exc:  # invalid fault rates
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return cell.run_workflow(request.workflow, request.recovery)
+
+    result = cell.run_workflow(request.workflow, request.recovery)
+    run_id = await store.save_result(result, workflow=request.workflow)
+    return result.model_copy(update={"id": run_id})
+
+
+@router.get("/workflows", response_model=list[WorkflowRunSummary])
+async def list_workflows(store: WorkflowStoreDep) -> list[WorkflowRunSummary]:
+    return await store.list_runs()
+
+
+@router.get("/workflows/{workflow_id}", response_model=StoredWorkflowRun)
+async def get_workflow(workflow_id: str, store: WorkflowStoreDep) -> StoredWorkflowRun:
+    run = await store.get_run(workflow_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="workflow run not found")
+    return run
+
+
+@router.get("/workflows/{workflow_id}/events", response_model=list[WorkflowEvent])
+async def get_workflow_events(workflow_id: str, store: WorkflowStoreDep) -> list[WorkflowEvent]:
+    if await store.get_run(workflow_id) is None:
+        raise HTTPException(status_code=404, detail="workflow run not found")
+    return await store.get_events(workflow_id)
 
 
 @router.get("/workcell/health", response_model=WorkCellHealth)

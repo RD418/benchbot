@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from benchbot.engine.events import Event, RunCompleted, RunFailed
 from benchbot.engine.runner import RunStatus
+from benchbot.workcell.cell import WorkflowStatus
+from benchbot.workcell.events import WorkflowEvent, WorkflowFinished
 
 
 def project_status(events: list[Event]) -> RunStatus:
@@ -24,3 +26,15 @@ def project_status(events: list[Event]) -> RunStatus:
         if isinstance(event, RunFailed):
             return RunStatus.FAILED
     return RunStatus.INVALID
+
+
+def project_workflow_status(events: list[WorkflowEvent]) -> WorkflowStatus:
+    """Derive a workflow run's terminal status from its events.
+
+    The terminal ``workflow_finished`` event carries the status; a run with no
+    events was rejected by static validation (``INVALID``).
+    """
+    for event in events:
+        if isinstance(event, WorkflowFinished):
+            return WorkflowStatus(event.status)
+    return WorkflowStatus.INVALID

@@ -51,3 +51,44 @@ class EventRow(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
 
     run: Mapped[RunRow] = relationship(back_populates="events")
+
+
+class WorkflowRunRow(Base):
+    """A persisted multi-device workflow run.
+
+    Stores the submitted ``workflow`` definition (so the DAG can be drawn), the
+    projected ``status``, the per-task outcomes, and a device-health snapshot.
+    The append-only event stream lives in ``workflow_events``.
+    """
+
+    __tablename__ = "workflow_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(20))  # projection of the event stream
+    workflow: Mapped[dict[str, Any]] = mapped_column(JSON)  # submitted definition (DAG)
+    tasks: Mapped[list[dict[str, Any]]] = mapped_column(JSON)  # per-task outcomes
+    device_health: Mapped[dict[str, str]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    events: Mapped[list[WorkflowEventRow]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="WorkflowEventRow.seq",
+    )
+
+
+class WorkflowEventRow(Base):
+    __tablename__ = "workflow_events"
+    __table_args__ = (UniqueConstraint("workflow_run_id", "seq", name="uq_workflow_event_seq"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workflow_run_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"), index=True
+    )
+    seq: Mapped[int] = mapped_column(Integer)
+    type: Mapped[str] = mapped_column(String(40), index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+    run: Mapped[WorkflowRunRow] = relationship(back_populates="events")

@@ -3,7 +3,9 @@
     "allow": [
       "Bash(uv --version)",
       "Bash(curl -LsSf https://astral.sh/uv/install.sh)",
-      "Bash(sh)"
+      "Bash(sh)",
+      "WebFetch(domain:docs.adaptyvbio.com)",
+      "WebFetch(domain:www.adaptyvbio.com)"
     ]
   }
 }

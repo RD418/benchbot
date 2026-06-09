@@ -195,7 +195,10 @@ Interactive docs are served at `/docs`. Endpoints:
 | `GET /runs/{id}` | Run status + metadata. |
 | `GET /runs/{id}/events` | The full event stream. |
 | `GET /runs/{id}/diagnostics` | Command/retry/recovery counts + failure + warnings. |
-| `POST /workflows` | Run a multi-device workflow; returns per-task outcomes. |
+| `POST /workflows` | Run a multi-device workflow; persists it and returns per-task outcomes. |
+| `GET /workflows` | List persisted workflow runs (most recent first). |
+| `GET /workflows/{id}` | A workflow run: status, the DAG definition, per-task outcomes, device health. |
+| `GET /workflows/{id}/events` | The workflow's event stream. |
 | `GET /workcell/health` | Per-device status, error rates, and quarantine state. |
 
 A `POST /runs` body can tune deterministic faults and retries:
@@ -364,9 +367,10 @@ assumptions:
 - The work cell executes tasks **sequentially in dependency order** — the focus
   is dependency ordering and failure isolation, not a real-time scheduler for
   overlapping device operations.
-- Work-cell state (device health, counters) is **in-memory**; workflow runs are
-  not persisted to SQLite (single-device runs are). Persisting them would reuse
-  the same event-sourcing approach.
+- Live work-cell state (device health, counters) is **in-memory**, but workflow
+  runs are **persisted** to SQLite via the same event-sourced approach as
+  single-device runs (the submitted DAG, per-task outcomes, device-health
+  snapshot, and the event stream), so they can be listed and inspected later.
 
 ## Failure cases & reproduction
 
@@ -444,10 +448,10 @@ src/benchbot/workcell/  # multi-device orchestration (depends on engine)
   cell.py               # WorkCell: schedule, recover, quarantine, health
   events.py             # workflow event types + log
 src/benchbot/store/     # persistence (depends on engine + domain)
-  models.py             # SQLAlchemy ORM: runs + append-only events tables
+  models.py             # SQLAlchemy ORM: runs + workflow_runs + event tables
   db.py                 # async engine / session / URL config
-  repository.py         # RunStore: save runs, load events, reconstruct status
-  projections.py        # derive run status from the event stream
+  repository.py         # RunStore + WorkflowStore: save, load events, reconstruct
+  projections.py        # derive run/workflow status from the event stream
 src/benchbot/api/       # FastAPI service (thin adapter over engine + store)
   app.py                # application factory + lifespan-managed store
   routes.py             # endpoints
