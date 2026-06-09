@@ -49,13 +49,3 @@ export interface RunOptions {
   halt: boolean;
   delay: number;
 }
-
-export function streamUrl(opts: RunOptions): string {
-  const params = new URLSearchParams({
-    seed: String(opts.seed),
-    hard_rate: String(opts.hardRate),
-    halt: String(opts.halt),
-    delay: String(opts.delay),
-  });
-  return `${API_URL}/stream/demo?${params.toString()}`;
-}
