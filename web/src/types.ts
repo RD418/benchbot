@@ -52,3 +52,41 @@ export interface TaskView {
   status: TaskStatus;
   note?: string;
 }
+
+// --- Persisted workflow runs (GET /workflows…) ---
+
+export type WorkflowRunStatus = "completed" | "degraded" | "halted" | "invalid";
+export type TaskOutcome = "completed" | "failed" | "skipped";
+
+export interface WorkflowRunSummary {
+  id: string;
+  name: string;
+  status: WorkflowRunStatus;
+  task_count: number;
+  created_at: string;
+}
+
+export interface WorkflowDefTask {
+  type: string;
+  id: string;
+  device: string;
+  depends_on: string[];
+}
+
+export interface StoredTaskOutcome {
+  id: string;
+  device: string;
+  outcome: TaskOutcome;
+  detail?: string | null;
+  failure?: { code: string; message: string } | null;
+}
+
+export interface StoredWorkflowRun {
+  id: string;
+  name: string;
+  status: WorkflowRunStatus;
+  workflow: { name: string; tasks: WorkflowDefTask[] };
+  tasks: StoredTaskOutcome[];
+  device_health: Record<string, Health>;
+  created_at: string;
+}
