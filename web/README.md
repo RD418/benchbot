@@ -1,12 +1,14 @@
 # BenchBot dashboard
 
 A small **read-only** observability UI for the BenchBot work cell, built with
-React + TypeScript + Vite. It streams a work-cell run over Server-Sent Events and
-animates device health, task progress, and the event timeline as they happen —
-so you can *watch* the orchestration (and graceful degradation) live.
+React + TypeScript + Vite. It lists persisted workflow runs and, for any run you
+select, draws the workflow as a **directed graph** (nodes colored by outcome, the
+failure path highlighted) alongside device health and the event stream.
 
 > Experiments are authored as code / YAML / API, not in the UI — the lab is
-> agent- and code-driven. This dashboard is purely a monitoring lens.
+> agent- and code-driven. This dashboard is purely a monitoring lens: it observes
+> whatever runs the CLI, API, or agents submit. The "run workflow" button just
+> triggers a sample run (`POST /workflows/demo`) so there's something to look at.
 
 ## Run it
 
@@ -29,16 +31,18 @@ The API base URL defaults to `http://localhost:8000`; override with
 
 ## What to try
 
-- Click **run workflow** — three devices, dependency-ordered, all complete.
-- Drag **incubator fault rate** to `1.0` and run — watch `inc1` go **down**, its
-  dependent task (`read`) get **skipped**, and the independent liquid-handler task
-  still **complete** (status `degraded`). That is graceful degradation: one
-  instrument failing does not cascade.
+- Click **run workflow** — a run appears in the list; select it to see the graph
+  (three devices, dependency-ordered, all green).
+- Drag **incubator fault rate** to `1.0` and run — the new run is `degraded`:
+  `inc1` goes **down**, its dependent task (`read`) is **skipped** (grey, dashed)
+  with a **red broken edge** marking the failure path, while the independent
+  liquid-handler task still **completes**. One instrument failing does not cascade.
 - Tick **halt on failure** — the same fault stops the whole workflow (`halted`).
 
 ## How it works
 
-`EventSource` consumes `GET /stream/demo`; pure reducers in `src/state.ts`
-*derive* live device and task views from the event stream (the same
-"reconstruct state from events" idea the backend uses for run status). The final
-`done` message carries the authoritative `WorkflowResult`.
+The dashboard reads the persisted-run endpoints (`GET /workflows`,
+`/workflows/{id}`, `/workflows/{id}/events`). `src/dag.ts` does a dependency-depth
+(longest-path) layout with no graph library; `DagView` renders it as SVG, coloring
+nodes by outcome and drawing edges downstream of a non-completed task as a broken
+red path. Device health is reconstructed from the run's stored events.

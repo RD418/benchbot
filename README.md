@@ -26,9 +26,9 @@ simulator with **no hardware required**.
   dependency-ordered workflows across several instruments; when one device fails
   it is quarantined and its dependents skipped, while independent work continues
   (no cascading failure).
-- **Live observability dashboard** — a React/TypeScript UI streams a run over
-  Server-Sent Events and animates device health, task progress, and the event
-  timeline as they happen (see [`web/`](web/)).
+- **Observability dashboard** — a React/TypeScript UI lists persisted runs and
+  draws each workflow as a DAG with the failure path highlighted, alongside
+  device health and the event stream (see [`web/`](web/)).
 
 ## Tech stack
 
@@ -221,9 +221,12 @@ work-cell run (paced so a browser can animate it); the
 ## Live dashboard
 
 A read-only **React + TypeScript** observability UI lives in [`web/`](web/). It
-streams a run over SSE and animates device health, task outcomes, and the event
-timeline — drag the *incubator fault rate* to `1.0` and watch a device get
-quarantined while independent work still finishes (graceful degradation, live).
+lists persisted workflow runs and, for any run, draws the workflow as a
+**directed graph** — nodes colored by outcome with the **failure path
+highlighted** — next to device health and the event stream. Drag the *incubator
+fault rate* to `1.0` and run: the new run is `degraded`, the incubator node is
+red, its dependent is skipped down a broken edge, and the independent task still
+completes (graceful degradation, visible).
 
 ```bash
 uv run benchbot serve --port 8000     # API
