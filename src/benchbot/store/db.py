@@ -7,13 +7,15 @@ one-line environment change — e.g. on Supabase:
 managed by Alembic; tests and quick dev use :func:`create_all`.
 
 Managed Postgres (Supabase, Neon, …) requires TLS. For ``postgresql+asyncpg``
-URLs we enable it by default via asyncpg's ``ssl`` connect arg; set
-``BENCHBOT_DB_SSL=disable`` for a local Postgres without TLS.
+URLs we require TLS by default without certificate verification, matching
+``sslmode=require`` behavior; set ``BENCHBOT_DB_SSL=verify`` to require a valid
+CA chain, or ``BENCHBOT_DB_SSL=disable`` for a local Postgres without TLS.
 """
 
 from __future__ import annotations
 
 import os
+import ssl
 from typing import Any
 
 from sqlalchemy.ext.asyncio import (
@@ -35,8 +37,17 @@ def get_database_url() -> str:
 
 def engine_connect_args(url: str) -> dict[str, Any]:
     """Driver connect args for a URL — notably TLS for managed Postgres."""
-    if url.startswith("postgresql+asyncpg") and os.environ.get("BENCHBOT_DB_SSL") != "disable":
-        return {"ssl": True}
+    if url.startswith("postgresql+asyncpg"):
+        ssl_mode = os.environ.get("BENCHBOT_DB_SSL", "require")
+        if ssl_mode == "disable":
+            return {}
+        if ssl_mode == "verify":
+            return {"ssl": ssl.create_default_context()}
+
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return {"ssl": context}
     return {}
 
 

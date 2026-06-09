@@ -1,6 +1,6 @@
 # Fly.io config for the BenchBot API (runs the repo Dockerfile: migrate -> serve).
 # Change `app` to your own name (or let `fly launch` set it), then `fly deploy`.
-app = "benchbot-api"
+app = "benchbot-api-rayd418"
 primary_region = "cdg"
 
 [build]

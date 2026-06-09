@@ -8,8 +8,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.19 /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    PATH="/app/.venv/bin:$PATH" \
-    BENCHBOT_DATABASE_URL="sqlite+aiosqlite:////data/benchbot.db"
+    PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app
 
