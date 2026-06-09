@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from benchbot.api.schemas import (
@@ -219,6 +219,20 @@ async def get_workflow_events(workflow_id: str, store: WorkflowStoreDep) -> list
     if await store.get_run(workflow_id) is None:
         raise HTTPException(status_code=404, detail="workflow run not found")
     return await store.get_events(workflow_id)
+
+
+@router.get("/workflows/{workflow_id}/export")
+async def export_workflow(workflow_id: str, store: WorkflowStoreDep) -> Response:
+    """Download a complete data package (definition + outcomes + metrics + events)."""
+    package = await store.export_package(workflow_id)
+    if package is None:
+        raise HTTPException(status_code=404, detail="workflow run not found")
+    filename = f"benchbot-run-{workflow_id}.json"
+    return Response(
+        content=package.model_dump_json(indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/workcell/health", response_model=WorkCellHealth)

@@ -81,6 +81,22 @@ def test_missing_workflow_is_404(client: TestClient) -> None:
     assert client.get("/workflows/nope/events").status_code == 404
 
 
+def test_export_downloads_a_data_package(client: TestClient) -> None:
+    run_id = client.post("/workflows/demo", params={"hard_rate": 1.0, "seed": 1}).json()["id"]
+    resp = client.get(f"/workflows/{run_id}/export")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/json")
+    assert "attachment" in resp.headers["content-disposition"]
+    package = resp.json()
+    assert package["run"]["id"] == run_id
+    assert package["task_totals"]["skipped"] == 1
+    assert any(m["name"] == "inc1" and m["quarantined"] for m in package["device_metrics"])
+
+
+def test_export_missing_run_is_404(client: TestClient) -> None:
+    assert client.get("/workflows/nope/export").status_code == 404
+
+
 def test_demo_endpoint_persists_a_run(client: TestClient) -> None:
     healthy = client.post("/workflows/demo").json()
     assert healthy["status"] == "completed"

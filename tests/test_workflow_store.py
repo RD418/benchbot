@@ -55,3 +55,19 @@ async def test_list_runs_returns_summaries(workflow_store: WorkflowStore) -> Non
 async def test_missing_run_is_none(workflow_store: WorkflowStore) -> None:
     assert await workflow_store.get_run("nope") is None
     assert await workflow_store.get_events("nope") == []
+
+
+async def test_export_package_includes_metrics_and_events(workflow_store: WorkflowStore) -> None:
+    run_id, _ = await _save_demo(workflow_store, fault=True)
+    package = await workflow_store.export_package(run_id)
+    assert package is not None
+    assert package.run.id == run_id
+    assert package.task_totals == {"completed": 1, "failed": 1, "skipped": 1}
+    inc1 = next(m for m in package.device_metrics if m.name == "inc1")
+    assert inc1.quarantined is True
+    assert inc1.errors >= 1
+    assert len(package.events) == len(await workflow_store.get_events(run_id))
+
+
+async def test_export_missing_run_is_none(workflow_store: WorkflowStore) -> None:
+    assert await workflow_store.export_package("nope") is None

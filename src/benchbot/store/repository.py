@@ -21,7 +21,12 @@ from benchbot.engine.runner import RunResult, RunStatus
 from benchbot.store.models import EventRow, RunRow, WorkflowEventRow, WorkflowRunRow
 from benchbot.store.projections import project_status, project_workflow_status
 from benchbot.workcell.cell import WorkflowResult, WorkflowStatus
-from benchbot.workcell.events import WorkflowEvent
+from benchbot.workcell.events import (
+    DeviceQuarantined,
+    TaskFailed,
+    TaskRetry,
+    WorkflowEvent,
+)
 from benchbot.workcell.workflow import Workflow
 
 #: Round-trips any concrete event through the discriminated union.
@@ -137,6 +142,67 @@ class StoredWorkflowRun(BaseModel):
     created_at: datetime
 
 
+class DeviceMetrics(BaseModel):
+    """Per-device counters derived from a run's event stream."""
+
+    name: str
+    health: str
+    retries: int
+    errors: int
+    quarantined: bool
+
+
+class WorkflowRunPackage(BaseModel):
+    """A self-contained, exportable record of a workflow run.
+
+    The honest "data package": the run's definition and outcomes, metrics derived
+    from the event stream, and the full stream itself — enough to reproduce and
+    audit the run offline.
+    """
+
+    package_version: int = 1
+    generated_at: datetime
+    run: StoredWorkflowRun
+    device_metrics: list[DeviceMetrics]
+    task_totals: dict[str, int]
+    events: list[WorkflowEvent]
+
+
+def _device_metrics(
+    run: StoredWorkflowRun, events: list[WorkflowEvent]
+) -> list[DeviceMetrics]:
+    names = list(run.device_health.keys())
+    retries = dict.fromkeys(names, 0)
+    errors = dict.fromkeys(names, 0)
+    quarantined = dict.fromkeys(names, False)
+    for event in events:
+        if isinstance(event, TaskRetry) and event.device in retries:
+            retries[event.device] += 1
+            errors[event.device] += 1
+        elif isinstance(event, TaskFailed) and event.device in errors:
+            errors[event.device] += 1
+        elif isinstance(event, DeviceQuarantined) and event.device in quarantined:
+            quarantined[event.device] = True
+    return [
+        DeviceMetrics(
+            name=name,
+            health=run.device_health[name],
+            retries=retries[name],
+            errors=errors[name],
+            quarantined=quarantined[name],
+        )
+        for name in names
+    ]
+
+
+def _task_totals(run: StoredWorkflowRun) -> dict[str, int]:
+    totals = {"completed": 0, "failed": 0, "skipped": 0}
+    for task in run.tasks:
+        outcome = str(task.get("outcome", ""))
+        totals[outcome] = totals.get(outcome, 0) + 1
+    return totals
+
+
 class WorkflowStore:
     """Async repository for workflow runs and their event streams."""
 
@@ -213,3 +279,17 @@ class WorkflowStore:
     async def reconstruct_status(self, run_id: str) -> WorkflowStatus:
         """Re-derive status from the stored event stream (event sourcing)."""
         return project_workflow_status(await self.get_events(run_id))
+
+    async def export_package(self, run_id: str) -> WorkflowRunPackage | None:
+        """Assemble a complete, downloadable data package for a run."""
+        run = await self.get_run(run_id)
+        if run is None:
+            return None
+        events = await self.get_events(run_id)
+        return WorkflowRunPackage(
+            generated_at=datetime.now(UTC),
+            run=run,
+            device_metrics=_device_metrics(run, events),
+            task_totals=_task_totals(run),
+            events=events,
+        )

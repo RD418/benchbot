@@ -18,21 +18,25 @@ from benchbot.store.models import (
 )
 from benchbot.store.projections import project_status, project_workflow_status
 from benchbot.store.repository import (
+    DeviceMetrics,
     RunStore,
     StoredRun,
     StoredWorkflowRun,
+    WorkflowRunPackage,
     WorkflowRunSummary,
     WorkflowStore,
 )
 
 __all__ = [
     "Base",
+    "DeviceMetrics",
     "EventRow",
     "RunRow",
     "RunStore",
     "StoredRun",
     "StoredWorkflowRun",
     "WorkflowEventRow",
+    "WorkflowRunPackage",
     "WorkflowRunRow",
     "WorkflowRunSummary",
     "WorkflowStore",
